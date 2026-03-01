@@ -30,6 +30,22 @@
 - 有回滚点
 - 有文档回写（Changelog / Assumptions / 必要时 ADR）
 
+## Rollback（回滚操作指南）
+> 原则：优先“可审计、可协作”的回滚方式；历史改写（reset/force push）需谨慎。
+
+### 未推送（本地尚未 push）
+- 回退最近一次提交（会丢弃该提交的工作区改动，请先确认无需保留）：
+  - `git reset --hard HEAD~1`
+
+### 已推送（远端已可见/多人协作）
+- 推荐生成反向提交（不改写历史）：
+  - `git revert <commit> --no-edit`
+- 说明：
+  - 初始提交/根提交在不同 Git 版本与历史状态下可能出现差异；若 `git revert` 失败，再评估是否使用 `git reset --hard <commit>` 并 `git push --force-with-lease`（**高风险：会改写历史，需团队协商**）。
+
+### 文档纪律
+- 若回滚影响已对外可见的行为/契约/发布内容：**回滚动作本身也必须更新 Changelog（必要时 ADR）**。
+
 ## 契约变更纪律（Contract Lock）
 - `agent_pack/schema/openapi.yaml` 为契约锁文件。
 - 任意 API/契约变更必须同步更新：

@@ -10,26 +10,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify AgentPack required files exist
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          test -f CODEX_START.md
-
-          test -f agent_pack/AGENTS.md
-          test -f agent_pack/PROJECT_MEMORY.md
-          test -f agent_pack/RUNBOOK.md
-
-          test -f agent_pack/prompts/CODEX_MASTER_PROMPT.md
-          test -f agent_pack/prompts/TASK_FEATURE.md
-          test -f agent_pack/prompts/TASK_BUGFIX.md
-          test -f agent_pack/prompts/TASK_DOC_PATCH.md
-          test -f agent_pack/prompts/TASK_PROMPT_PATCH.md
-
-          test -f agent_pack/schema/openapi.yaml
-          test -f agent_pack/episodes/.gitkeep
-
-          test -f .env.example
-          test -f Makefile
-
+      - name: AgentPack validation gate
+        run: make validate

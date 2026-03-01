@@ -51,10 +51,11 @@
 当前顶层结构（2026-03-01 初始化后）：
 - `CODEX_START.md`：每轮入口与输出协议
 - `agent_pack/`：可复用 AgentPack（硬规则、记忆库、runbook、prompts、schema、episodes）
-- `.github/`：CI 工作流（当前仅做 AgentPack 文件存在性校验，不绑定技术栈）
+- `agent_pack/tools/validate_agent_pack.sh`：AgentPack 自检脚本（质量闸门）
+- `.github/`：CI 工作流（当前仅跑 AgentPack 自检质量闸门，不绑定技术栈）
 - `.env.example`：环境变量占位（禁止真实密钥）
 - `Makefile`：统一入口（dev/test/lint，占位 + TODO）
-- `.github/workflows/ci.yml`：CI 占位校验（不绑定具体技术栈）
+- `.github/workflows/ci.yml`：CI 自检闸门（仅跑 `make validate`，不绑定具体技术栈）
 
 若出现同名文件无法安全合并：创建 `*-v2` 并在此记录映射关系（当前：NONE）。
 
@@ -70,9 +71,11 @@
 ### Commands（dev/test/lint/build）
 > 不确定技术栈时只提供 TODO 指引，避免写会失败的命令。
 
+- `make validate`：AgentPack 自检（质量闸门；CI 仅跑此项）
 - `make dev`：占位（后续填入真实启动命令）
-- `make test`：占位（后续填入真实测试命令）
-- `make lint`：占位（后续填入真实静态检查命令）
+- `make test`：当前等价于 `make validate`（后续替换为真实测试命令）
+- `make lint`：当前等价于 `make validate`（后续替换为真实静态检查命令）
+- `make build`：占位（后续填入真实构建命令）
 - TODO：当技术栈明确后，将真实命令写入此处，并同步更新 Makefile/CI。
 
 ### Observability
@@ -93,6 +96,7 @@
 | Date | Area | Summary | Links |
 |---|---|---|---|
 | 2026-03-01 | agent_pack | Bootstrap AgentPack（硬规则/记忆库/runbook/prompts/schema/入口） | N/A |
+| 2026-03-01 | agent_pack | Add AgentPack validation gate（validate script + Makefile/CI + rollback docs） | `agent_pack/tools/validate_agent_pack.sh` |
 
 ### Todo
 - TODO：补齐技术栈与真实命令（见 A-002）。
