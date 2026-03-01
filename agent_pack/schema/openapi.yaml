@@ -1,0 +1,22 @@
+# OpenAPI 3.0 Contract Lock (placeholder)
+#
+# HARD RULE:
+# - Any API/contract change MUST update:
+#   1) this file (schema)
+#   2) PROJECT_MEMORY.md -> Change Control -> Changelog
+#   3) ADR (when trade-offs/compatibility need a recorded decision)
+#
+# This file may start empty. It exists to "lock" the contract early and
+# force deliberate, reviewable changes over time.
+
+openapi: 3.0.3
+info:
+  title: Contract Lock Placeholder
+  version: 0.0.0
+  description: |
+    This is the repository contract-lock file.
+    Do not change API behavior without updating this schema and the changelog.
+servers: []
+paths: {}
+components: {}
+
