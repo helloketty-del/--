@@ -77,6 +77,9 @@ required_files=(
   "agent_pack/AGENTS.md"
   "agent_pack/PROJECT_MEMORY.md"
   "agent_pack/RUNBOOK.md"
+  "agent_pack/AUTOPILOT_POLICY.md"
+  "agent_pack/ROADMAP.md"
+  "agent_pack/BACKLOG.md"
   "agent_pack/prompts/CODEX_MASTER_PROMPT.md"
   "agent_pack/prompts/TASK_FEATURE.md"
   "agent_pack/prompts/TASK_BUGFIX.md"
@@ -84,6 +87,9 @@ required_files=(
   "agent_pack/prompts/TASK_PROMPT_PATCH.md"
   "agent_pack/schema/openapi.yaml"
   "agent_pack/episodes/.gitkeep"
+  ".github/workflows/autopilot.yml"
+  "scripts/deploy_staging.sh"
+  "scripts/smoke_test.sh"
 )
 
 for path in "${required_files[@]}"; do

@@ -51,11 +51,18 @@
 当前顶层结构（2026-03-01 初始化后）：
 - `CODEX_START.md`：每轮入口与输出协议
 - `agent_pack/`：可复用 AgentPack（硬规则、记忆库、runbook、prompts、schema、episodes）
+- `agent_pack/AUTOPILOT_POLICY.md`：无人值守策略（变更范围/预算/停机/发布/回滚）
+- `agent_pack/ROADMAP.md`：里程碑占位
+- `agent_pack/BACKLOG.md`：任务池（schedule 默认挑选 Top-1 READY）
 - `agent_pack/tools/validate_agent_pack.sh`：AgentPack 自检脚本（质量闸门）
-- `.github/`：CI 工作流（当前仅跑 AgentPack 自检质量闸门，不绑定技术栈）
+- `.github/`：CI/Autopilot 工作流（不绑定具体技术栈）
 - `.env.example`：环境变量占位（禁止真实密钥）
 - `Makefile`：统一入口（dev/test/lint，占位 + TODO）
 - `.github/workflows/ci.yml`：CI 自检闸门（仅跑 `make validate`，不绑定具体技术栈）
+- `.github/workflows/autopilot.yml`：无人值守闭环骨架（Codex → PR → 合并 → Staging 占位部署）
+- `scripts/`：部署/烟测钩子占位（不绑定云厂商）
+- `scripts/deploy_staging.sh`：Staging 部署占位（默认不失败）
+- `scripts/smoke_test.sh`：Staging 烟测占位（默认不失败）
 
 若出现同名文件无法安全合并：创建 `*-v2` 并在此记录映射关系（当前：NONE）。
 
@@ -81,6 +88,37 @@
 ### Observability
 - TODO：日志/指标/追踪/告警与本地调试方式。
 
+## Automation
+### Autopilot（zero-touch）概览
+- 策略文件：`agent_pack/AUTOPILOT_POLICY.md`
+- 工作流：`.github/workflows/autopilot.yml`
+- 默认策略：**自动到 Staging**；Prod 自动化为可选开关（默认关闭）。
+
+### Triggers
+- `schedule`：周期触发（会尝试从 `agent_pack/BACKLOG.md` 选择 Top-1 `READY`；无任务或未配置密钥则 no-op）。
+- `issues:labeled`：当 Issue 被添加 label `autopilot:run` 时触发（任务来源为 Issue 内容）。
+
+### Flow（不依赖业务栈）
+1. 运行 `make validate/test/lint`（当前为 AgentPack 自检闸门）
+2. （若配置了 `OPENAI_API_KEY`）运行 `openai/codex-action@v1` 生成变更
+3. 再次运行 `make validate/test/lint`
+4. 通过后：创建分支 → 提 PR → 自动合并（不直接推主分支）
+5. 合并后：调用 `scripts/deploy_staging.sh` 与 `scripts/smoke_test.sh`（当前为占位，默认不失败）
+
+### Secrets（仅定义名称与用途；仓库内禁止真实值）
+- 必需（启用 Codex）：
+  - `OPENAI_API_KEY`：用于 `openai/codex-action@v1` 调用 Codex（仅在 Actions Secrets 配置，不写入仓库）
+- 可选（未来接入真实部署/烟测时再补齐）：
+  - `STAGING_DEPLOY_TOKEN`：Staging 部署凭证（占位）
+  - `STAGING_BASE_URL`：Staging 烟测目标地址（占位）
+  - `PROD_DEPLOY_TOKEN` / `PROD_BASE_URL`：Prod 相关占位（默认不开启）
+
+### Prod 开关（默认关闭）
+- Repo Variables：`AUTOPILOT_ENABLE_PROD=true` 才会执行 Prod 占位步骤。
+
+### Rollback
+- 部署或烟测失败时：优先用 `git revert` 方式回滚（不改写历史），并更新 Changelog（若已对外可见）。
+
 ## Quality Bar（DoD）
 最低 DoD（不可降低）：
 - 有可交付变更（实现/修复/文档更新之一）
@@ -97,6 +135,7 @@
 |---|---|---|---|
 | 2026-03-01 | agent_pack | Bootstrap AgentPack（硬规则/记忆库/runbook/prompts/schema/入口） | N/A |
 | 2026-03-01 | agent_pack | Add AgentPack validation gate（validate script + Makefile/CI + rollback docs） | `agent_pack/tools/validate_agent_pack.sh` |
+| 2026-03-01 | autopilot | Add zero-touch Codex pipeline skeleton（policy + backlog + workflow + staging hooks） | `.github/workflows/autopilot.yml` |
 
 ### Todo
 - TODO：补齐技术栈与真实命令（见 A-002）。

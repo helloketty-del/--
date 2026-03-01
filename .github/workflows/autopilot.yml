@@ -1,0 +1,319 @@
+name: autopilot
+
+on:
+  schedule:
+    # Runs periodically; will no-op if no READY backlog item or no OPENAI_API_KEY configured.
+    - cron: "0 * * * *" # hourly
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+
+concurrency:
+  group: autopilot
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+jobs:
+  autopilot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate AgentPack gate (pre)
+        run: |
+          make validate
+          make test
+          make lint
+
+      - name: Select task (issue label or backlog top-1)
+        id: task
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          LABEL_NAME: ${{ github.event.label.name }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+
+          default_branch="${{ github.event.repository.default_branch }}"
+          echo "default_branch=${default_branch}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${EVENT_NAME}" == "issues" ]]; then
+            if [[ "${LABEL_NAME}" != "autopilot:run" ]]; then
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              echo "reason=label_mismatch" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            title="${ISSUE_TITLE:-(no title)}"
+            body="${ISSUE_BODY:-}"
+            title_one_line="$(printf '%s' "${title}" | tr '\r\n' ' ')"
+
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "task_title=${title_one_line}" >> "$GITHUB_OUTPUT"
+
+            {
+              echo "task<<EOF"
+              echo "Issue-driven task"
+              echo ""
+              echo "Title: ${title_one_line}"
+              echo ""
+              echo "${body}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          line="$(grep -m1 -E '^- \\[P[0-3]\\]\\[READY\\] ' agent_pack/BACKLOG.md || true)"
+          if [[ -z "${line}" ]]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "reason=no_ready_backlog_item" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+          echo "task_title=$(echo "${line}" | sed -E 's/^- \\[P[0-3]\\]\\[READY\\] //')" >> "$GITHUB_OUTPUT"
+          {
+            echo "task<<EOF"
+            echo "Backlog-driven task (Top-1 READY)"
+            echo ""
+            echo "${line}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: No-op (no task selected)
+        if: steps.task.outputs.should_run != 'true'
+        env:
+          REASON: ${{ steps.task.outputs.reason }}
+        run: echo "Autopilot: no task selected (${REASON})"
+
+      - name: No-op (OPENAI_API_KEY not configured)
+        if: steps.task.outputs.should_run == 'true' && secrets.OPENAI_API_KEY == ''
+        run: |
+          echo "Autopilot: OPENAI_API_KEY secret is missing; skipping Codex run."
+          echo "Configure GitHub Secret: OPENAI_API_KEY (no real secrets in repo)."
+
+      - name: Generate Codex prompt file
+        if: steps.task.outputs.should_run == 'true' && secrets.OPENAI_API_KEY != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > autopilot_prompt.md <<'PROMPT'
+          You are Codex running in a repository with an AgentPack.
+
+          Mandatory reading order (facts > process > rules > autopilot policy):
+          1) agent_pack/PROJECT_MEMORY.md
+          2) agent_pack/RUNBOOK.md
+          3) agent_pack/AGENTS.md
+          4) agent_pack/AUTOPILOT_POLICY.md
+          5) agent_pack/ROADMAP.md
+          6) agent_pack/BACKLOG.md
+
+          HARD RULES:
+          - Do not invent unknown APIs/paths/dependencies; record assumptions in PROJECT_MEMORY.md (impact + validation plan).
+          - Do not write any real secrets/tokens/private data.
+          - Do not modify .github/ unless this is explicitly a TASK_PROMPT_PATCH task (default: forbidden).
+          - Keep changes within AUTOPILOT_POLICY change budget and allowed scope.
+          - If you change interfaces/dirs/deps/env vars/external services, apply MEMORY_PATCH into PROJECT_MEMORY.md.
+          - Maintain Contract Lock: if API changes, update agent_pack/schema/openapi.yaml + Changelog (+ ADR when needed).
+
+          OUTPUT REQUIREMENT:
+          - Your final response MUST include a STATE_REPORT section containing:
+            REPO_STATE, CHECKS (validate/test/lint intent), CONTRACT_DELTA, MEMORY_PATCH_APPLIED, TODO/RISKS.
+          - Do NOT create/edit files under agent_pack/episodes/ (the workflow writes the episode record).
+
+          TASK:
+          PROMPT
+
+          {
+            echo ""
+            printf '%s\n' "${{ steps.task.outputs.task }}"
+          } >> autopilot_prompt.md
+
+      - name: Run Codex (non-interactive)
+        id: codex
+        if: steps.task.outputs.should_run == 'true' && secrets.OPENAI_API_KEY != ''
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: autopilot_prompt.md
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+          allow-bots: true
+
+      - name: Cleanup prompt file
+        if: steps.task.outputs.should_run == 'true' && secrets.OPENAI_API_KEY != ''
+        shell: bash
+        run: rm -f autopilot_prompt.md
+
+      - name: Validate AgentPack gate (post)
+        if: steps.task.outputs.should_run == 'true' && secrets.OPENAI_API_KEY != ''
+        run: |
+          make validate
+          make test
+          make lint
+
+      - name: Write STATE_REPORT episode
+        if: steps.task.outputs.should_run == 'true' && secrets.OPENAI_API_KEY != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet; then
+            echo "No changes; skipping episode write."
+            exit 0
+          fi
+
+          ts="$(date -u +%Y%m%d-%H%M%S)"
+          episode="agent_pack/episodes/${ts}-autopilot.md"
+
+          base_branch="${{ steps.task.outputs.default_branch }}"
+          base_sha="$(git rev-parse HEAD)"
+          changed_files="$(git diff --name-only)"
+
+          contract_delta="NO"
+          if echo "${changed_files}" | grep -q -E '^agent_pack/schema/openapi\\.yaml$'; then
+            contract_delta="YES (agent_pack/schema/openapi.yaml)"
+          fi
+
+          memory_patch="NO"
+          if echo "${changed_files}" | grep -q -E '^agent_pack/PROJECT_MEMORY\\.md$'; then
+            memory_patch="YES (agent_pack/PROJECT_MEMORY.md)"
+          fi
+
+          {
+            echo "# Episode: Autopilot ${ts}"
+            echo ""
+            echo "STATE_REPORT:"
+            echo "  REPO_STATE:"
+            echo "    base_branch: ${base_branch}"
+            echo "    base_sha: ${base_sha}"
+            echo "    changed_files:"
+            echo "${changed_files}" | sed 's/^/      - /'
+            echo "  CHECKS:"
+            echo "    validate: PASS"
+            echo "    test: PASS"
+            echo "    lint: PASS"
+            echo "  CONTRACT_DELTA: ${contract_delta}"
+            echo "  MEMORY_PATCH_APPLIED: ${memory_patch}"
+            echo "  TODO/RISKS:"
+            echo "    - NONE"
+            echo ""
+            echo "PROMPT_REVIEW:"
+            echo "  - NONE"
+            echo ""
+            echo "PROMPT_PATCH:"
+            echo "  - NONE"
+          } > "${episode}"
+
+      - name: Enforce AUTOPILOT_POLICY scope and budget
+        if: steps.task.outputs.should_run == 'true' && secrets.OPENAI_API_KEY != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          changed_files="$(git diff --name-only)"
+          if [[ -z "${changed_files}" ]]; then
+            echo "No changes detected after Codex run."
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "${changed_files}"
+
+          # Forbidden by default in AUTOPILOT_POLICY
+          if echo "${changed_files}" | grep -q -E '^\\.github/'; then
+            echo "ERROR: .github/ changes are forbidden by AUTOPILOT_POLICY (unless explicit TASK_PROMPT_PATCH)."
+            exit 1
+          fi
+
+          # Allow-list only (keep in sync with agent_pack/AUTOPILOT_POLICY.md)
+          if echo "${changed_files}" | grep -q -v -E '^(src/|tests/|docs/|agent_pack/|scripts/)'; then
+            echo "ERROR: changes outside allowed scope detected (see AUTOPILOT_POLICY.md)."
+            echo "${changed_files}" | grep -E -v '^(src/|tests/|docs/|agent_pack/|scripts/)' | sed 's/^/  - /'
+            exit 1
+          fi
+
+          # Change budget (keep in sync with agent_pack/AUTOPILOT_POLICY.md)
+          max_files=12
+          max_added_lines=500
+
+          file_count="$(echo "${changed_files}" | wc -l | tr -d ' ')"
+          if (( file_count > max_files )); then
+            echo "ERROR: change budget exceeded: files=${file_count} > ${max_files}"
+            exit 1
+          fi
+
+          added_lines="$(git diff --numstat | awk '{ if ($1 ~ /^[0-9]+$/) add+=$1 } END { print add+0 }')"
+          if (( added_lines > max_added_lines )); then
+            echo "ERROR: change budget exceeded: added_lines=${added_lines} > ${max_added_lines}"
+            exit 1
+          fi
+
+      - name: Create PR (branch + commit)
+        id: pr
+        if: steps.task.outputs.should_run == 'true' && secrets.OPENAI_API_KEY != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ steps.task.outputs.default_branch }}
+          TASK_TITLE: ${{ steps.task.outputs.task_title }}
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet; then
+            echo "No changes to commit; skipping PR."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ts="$(date -u +%Y%m%d-%H%M%S)"
+          branch="autopilot/${ts}"
+          safe_title="$(printf '%s' "${TASK_TITLE}" | tr '\r\n' ' ')"
+          safe_title="${safe_title//\"/}"
+          safe_title="${safe_title:0:120}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "${branch}"
+          git add -A
+          git commit -m "autopilot: ${ts} - ${safe_title}"
+          git push origin "${branch}"
+
+          pr_url="$(gh pr create --base "${DEFAULT_BRANCH}" --head "${branch}" --title "autopilot: ${safe_title}" --body "Automated change generated by Codex autopilot.\n\nPolicy: agent_pack/AUTOPILOT_POLICY.md" --json url -q .url)"
+
+          echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+          echo "pr_url=${pr_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Auto-merge PR
+        if: steps.pr.outputs.created == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr merge "${{ steps.pr.outputs.pr_url }}" --squash --delete-branch
+
+      - name: Deploy to staging (placeholder)
+        if: steps.pr.outputs.created == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          default_branch="${{ steps.task.outputs.default_branch }}"
+          git fetch origin "${default_branch}"
+          git checkout "${default_branch}"
+          git reset --hard "origin/${default_branch}"
+          bash scripts/deploy_staging.sh
+          bash scripts/smoke_test.sh
+
+      - name: Deploy to prod (optional, disabled by default)
+        if: steps.pr.outputs.created == 'true' && vars.AUTOPILOT_ENABLE_PROD == 'true'
+        run: echo "TODO: implement prod deployment (AUTOPILOT_ENABLE_PROD=true)"
