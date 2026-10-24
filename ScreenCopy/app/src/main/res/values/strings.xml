@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">轻触取字</string>
+    <string name="service_description">显示可拖动、自动靠边的小方块。只有点击小方块时才截取当前屏幕，在设备本地识别文字并写入剪贴板。截图仅保留在内存中，完成后释放，不保存图片、不上传内容、不记录识别历史。可随时在应用中停止。</string>
+</resources>
