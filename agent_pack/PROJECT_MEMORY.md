@@ -3,10 +3,14 @@
 > 优先级：`PROJECT_MEMORY.md` > `ADR/决策记录` > `代码现状` > `episodes`  
 > 冲突处理：先更新本文件（含 MEMORY_PATCH）再改代码/文档。
 
-最后更新：2026-03-01
+最后更新：2026-10-24
 
 ## Project Summary
-- TODO：用 5-10 行描述本项目“做什么、给谁用、核心边界、关键质量目标”。
+- 本仓库保留 AgentPack 协作模板，并新增独立 Android 项目 `ScreenCopy/`。
+- 轻触取字面向 Android 11+：拖动悬浮小方块、松手吸边、点按截取当前可见屏幕、本地 OCR 并写入剪贴板。
+- 截图只在内存中处理；不保存相册图片；识别失败不覆盖原剪贴板。
+- 无障碍服务需要用户在系统设置中手动开启；不读取窗口控件、不自动操作其他应用。
+- 本轮仅提交已有 1.0.0 源码和构建说明，不修改其应用行为，也不提交 APK、SDK、签名私钥或密钥。
 
 ## Constraints & Assumptions
 > 任何信息不足/不确定点必须记录在此，并包含影响与验证计划。格式：`A-xxx`。
@@ -14,22 +18,25 @@
 | ID | Statement | Impact | Validation Plan | Status | Date |
 |---|---|---|---|---|---|
 | A-001 | 本仓库在 AgentPack 初始化时（2026-03-01）目录为空且非 Git 仓库，无法从代码推断技术栈。 | Makefile/CI/dev/test/lint 仅能提供占位与 TODO 指引；需要后续补全真实命令与结构。 | 确认本目录为目标仓库根目录；如应存在代码则迁移/恢复后更新本文件与入口脚本。 | OPEN | 2026-03-01 |
-| A-002 | 当前未知技术栈（Node/Python/Go/Java 等），未知可运行命令。 | 无法提供可运行的 lint/test；需后续补齐 `Engineering & Run -> Commands`。 | 引入代码后扫描清单文件（如 package.json/pyproject/go.mod 等）并更新命令。 | OPEN | 2026-03-01 |
-| A-003 | 当前未知对外 API/契约；`openapi.yaml` 为契约锁占位。 | 未来新增/变更 API 时必须同步更新 schema + Changelog + 必要时 ADR。 | 首次引入 API 时补齐 OpenAPI 路径/模型，并在 Changelog 记录。 | OPEN | 2026-03-01 |
+| A-002 | 已导入 `ScreenCopy/`：Java 17、Android SDK 35、Gradle 8.9、AGP 8.7.3。 | 子项目构建、单元测试与 lint 命令已明确；根目录 CI 仍只验证 AgentPack。 | 依据构建清单及 `ScreenCopy/VALIDATION.md`，使用子项目命令验证。 | RESOLVED | 2026-10-24 |
+| A-003 | ScreenCopy 为本地安卓工具，没有 HTTP 服务或新对外 API；原 OpenAPI 占位保留。 | 本轮无 API 契约变更。 | 核对清单与源码，不新增网络服务。 | RESOLVED | 2026-10-24 |
+| A-004 | APK 原构建已通过 4 项 JUnit 与 Android Lint，但尚未真机验证。 | 悬浮、截屏、OCR、剪贴板和厂商后台管理仍需实际设备确认。 | 按 ScreenCopy/README.md 的真机清单验证；本轮恢复源码只做完整性和仓库检查，不重复声称执行安卓构建。 | OPEN | 2026-10-24 |
 
 ## Architecture
 ### Tech Stack
-- TODO：语言/框架/运行时/数据库/队列/缓存/部署形态。
+- ScreenCopy：Java 17、Android SDK 35（minSdk 30 / targetSdk 35）、AGP 8.7.3、Gradle 8.9、内置 ML Kit 中文 OCR 16.0.1；无业务数据库或服务端。
 
 ### Modules
-- TODO：列出模块边界与责任（前端/后端/数据/基础设施等）。
+- `ScreenCopy/app/`：MainActivity 授权引导、CaptureService 截屏与剪贴板、BubbleView 悬浮控件、DockMath 边界/吸附算法。
+- `agent_pack/`：既有协作记录与自检，与安卓源码分开维护。
 
 ### Data Flow
-- TODO：从入口请求到数据落库/外部依赖的主链路（可用文本或简图链接）。
+- 用户点击悬浮块 → 隐藏浮块 → AccessibilityService 截屏 → 内存 Bitmap → 本地 OCR → 文字写入系统剪贴板 → 释放 Bitmap/硬件缓冲；不写截图文件。
 
 ## Interfaces & Contracts
 ### External Services
-- TODO：外部服务清单（域名/用途/鉴权方式/超时/重试/降级）。
+- 运行时 OCR 使用内置模型，无远程 API、无需 API Key；合并清单移除 INTERNET 与 ACCESS_NETWORK_STATE。
+- 首次构建通过 Google Maven / Maven Central / Gradle 官方分发下载构建依赖；依赖更新需重新验证。
 
 ### API Contracts
 - 契约锁文件：`agent_pack/schema/openapi.yaml`
@@ -48,7 +55,8 @@
 ### Repo Structure（真实结构与映射）
 > 变更目录结构必须触发 MEMORY_PATCH 并回写本节。
 
-当前顶层结构（2026-03-01 初始化后）：
+当前顶层结构（2026-10-24）：
+- `ScreenCopy/`：轻触取字安卓独立项目，含源码、Gradle Wrapper、JUnit 测试、README 与 VALIDATION。
 - `CODEX_START.md`：每轮入口与输出协议
 - `agent_pack/`：可复用 AgentPack（硬规则、记忆库、runbook、prompts、schema、episodes）
 - `agent_pack/AUTOPILOT_POLICY.md`：无人值守策略（变更范围/预算/停机/发布/回滚）
@@ -67,13 +75,13 @@
 若出现同名文件无法安全合并：创建 `*-v2` 并在此记录映射关系（当前：NONE）。
 
 仓库现状备注（初始化时）：
-- 未发现业务代码/模块目录（可能尚未导入代码）。
+- 已于 2026-10-24 导入 `ScreenCopy/`；原 AgentPack 规则和自动化工作流保留。
 - 未发现仓库级 `docs/` 或 `prompts/` 目录；若后续引入，需在此建立与 `agent_pack/` 的关系映射，避免覆盖。
 - `agent_pack/episodes/` 默认只检索最近 30 条（更老需归档且默认不检索）。
 
 ### Env Vars
 - 仅允许在 `.env.example` 中描述变量名与用途；严禁提交真实密钥。
-- TODO：补齐本项目需要的环境变量列表（名称/用途/是否必需/默认值/来源）。
+- ScreenCopy 构建需要系统 `JAVA_HOME`（JDK 17）和 `ANDROID_HOME`（SDK，含 platforms;android-35）。不提交本机 local.properties；运行 App 不需要 API Key。
 
 ### Commands（dev/test/lint/build）
 > 不确定技术栈时只提供 TODO 指引，避免写会失败的命令。
@@ -83,7 +91,10 @@
 - `make test`：当前等价于 `make validate`（后续替换为真实测试命令）
 - `make lint`：当前等价于 `make validate`（后续替换为真实静态检查命令）
 - `make build`：占位（后续填入真实构建命令）
-- TODO：当技术栈明确后，将真实命令写入此处，并同步更新 Makefile/CI。
+- Android 构建：`cd ScreenCopy && ./gradlew assembleDebug`。
+- Android 单元测试：`cd ScreenCopy && ./gradlew testDebugUnitTest`。
+- Android 静态检查：`cd ScreenCopy && ./gradlew lintDebug`。
+- 本轮为源码归档提交，根目录 Makefile/CI 仍保留现有 AgentPack 自检；Android 自动化构建接入不在本轮范围，不能把根目录 CI 当成 Android 验证。
 
 ### Observability
 - TODO：日志/指标/追踪/告警与本地调试方式。
@@ -133,15 +144,17 @@
 ### Changelog
 | Date | Area | Summary | Links |
 |---|---|---|---|
+| 2026-10-24 | ScreenCopy | 导入轻触取字 1.0.0 安卓源码、Gradle Wrapper、4 项算法测试与真实验证记录；无新 HTTP API | `ScreenCopy/README.md`, `ScreenCopy/VALIDATION.md` |
 | 2026-03-01 | agent_pack | Bootstrap AgentPack（硬规则/记忆库/runbook/prompts/schema/入口） | N/A |
 | 2026-03-01 | agent_pack | Add AgentPack validation gate（validate script + Makefile/CI + rollback docs） | `agent_pack/tools/validate_agent_pack.sh` |
 | 2026-03-01 | autopilot | Add zero-touch Codex pipeline skeleton（policy + backlog + workflow + staging hooks） | `.github/workflows/autopilot.yml` |
 
 ### Todo
-- TODO：补齐技术栈与真实命令（见 A-002）。
+- TODO：根据需要将 Android 构建/测试接入 CI；当前根目录 CI 仅跑 AgentPack 自检。
 - TODO：若存在 API，补齐 OpenAPI schema（见 A-003）。
 
 ### Risk Register
 | Date | Risk | Mitigation | Status |
 |---|---|---|---|
-| 2026-03-01 | 技术栈未知导致验证链路缺失。 | 代码引入后第一时间补齐 Commands/CI，并补充可执行验证。 | OPEN |
+| 2026-10-24 | 尚未真机验证，且现有 CI 不构建 Android。 | 源码已包含原构建验证记录、可执行命令及真机复核清单；后续按需接入 Android CI。 | OPEN |
+
