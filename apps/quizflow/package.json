@@ -1,6 +1,6 @@
 {
   "name": "quiz-control-room",
-  "version": "0.8.0-practice",
+  "version": "0.8.1-practice",
   "private": true,
   "type": "module",
   "scripts": {

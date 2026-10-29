@@ -50,6 +50,7 @@ interface GestureGateway {
     fun resetTarget() = Unit
     fun tap(box: NormalizedBox, callback: (Boolean) -> Unit)
     fun tapConfirm(box: NormalizedBox?, callback: (Boolean) -> Unit)
+    fun tapConfirmAttempt(box: NormalizedBox?, attempt: Int, callback: (Boolean) -> Unit) = tapConfirm(box, callback)
     fun cancel()
 }
 
@@ -465,7 +466,7 @@ class QuizRunCoordinator(
         }
         val delivered = AtomicBoolean(false)
         try {
-            gestureGateway.tapConfirm(plan.confirmBox) { success ->
+            gestureGateway.tapConfirmAttempt(plan.confirmBox, confirmTapAttempts) { success ->
                 if (delivered.compareAndSet(false, true)) onConfirmTapCompleted(runGeneration, success)
             }
         } catch (error: Exception) {

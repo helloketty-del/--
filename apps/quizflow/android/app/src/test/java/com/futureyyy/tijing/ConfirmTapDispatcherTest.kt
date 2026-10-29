@@ -5,6 +5,30 @@ import org.junit.Test
 
 class ConfirmTapDispatcherTest {
     @Test
+    fun retryBypassesPreviouslySuccessfulTextDeliveryAndUsesCoordinates() {
+        val calls = mutableListOf<String>()
+        ConfirmTapDispatcher.dispatch(
+            tapText = { calls += "text"; it(true) },
+            tapCoordinates = { calls += "coordinates"; it(true) },
+            completion = { calls += "complete:$it" },
+            preferCoordinates = true,
+        )
+        assertEquals(listOf("coordinates", "complete:true"), calls)
+    }
+
+    @Test
+    fun retryWithoutCoordinatesStillUsesAvailableTextControl() {
+        val calls = mutableListOf<String>()
+        ConfirmTapDispatcher.dispatch(
+            tapText = { calls += "text"; it(true) },
+            tapCoordinates = null,
+            completion = { calls += "complete:$it" },
+            preferCoordinates = true,
+        )
+        assertEquals(listOf("text", "complete:true"), calls)
+    }
+
+    @Test
     fun fallsBackToModelCoordinatesWhenTextConfirmationIsUnavailable() {
         val calls = mutableListOf<String>()
 

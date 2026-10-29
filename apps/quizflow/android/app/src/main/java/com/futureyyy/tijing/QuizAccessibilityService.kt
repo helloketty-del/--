@@ -4,6 +4,8 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.graphics.Path
 import android.graphics.Rect
+import android.util.DisplayMetrics
+import android.view.WindowManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -80,9 +82,9 @@ class QuizAccessibilityService : AccessibilityService() {
             debugGesture("tap-rejected-foreground")
             return reject(finish)
         }
-        val metrics = resources.displayMetrics
-        val x = nx * metrics.widthPixels
-        val y = ny * metrics.heightPixels
+        val metrics = fullDisplayMetrics()
+        val x = nx * (metrics.widthPixels - 1)
+        val y = ny * (metrics.heightPixels - 1)
         return enqueueTap(x, y, targetPackage, finish)
     }
 
@@ -163,20 +165,19 @@ class QuizAccessibilityService : AccessibilityService() {
     }
 
     fun swipeAsync(direction: FlowSwipe, targetPackage: String, completion: (Boolean) -> Unit): Boolean {
+        return swipePathAsync(SwipePath.defaultFor(direction), targetPackage, completion)
+    }
+
+    fun swipePathAsync(profile: SwipePath, targetPackage: String, completion: (Boolean) -> Unit): Boolean {
         val finish = singleCompletion(completion)
         if (!isEligibleTargetPackage(targetPackage) || !isTargetForeground(targetPackage)) return reject(finish)
-        val m = resources.displayMetrics
-        val (sx, sy, ex, ey) = when (direction) {
-            FlowSwipe.LEFT -> listOf(0.82f, 0.5f, 0.18f, 0.5f)
-            FlowSwipe.RIGHT -> listOf(0.18f, 0.5f, 0.82f, 0.5f)
-            FlowSwipe.UP -> listOf(0.5f, 0.76f, 0.5f, 0.34f)
-            FlowSwipe.DOWN -> listOf(0.5f, 0.34f, 0.5f, 0.76f)
-        }
+        val m = fullDisplayMetrics()
+        val (sx, sy, ex, ey) = profile.pixels(m.widthPixels, m.heightPixels)
         val path = Path().apply {
-            moveTo(sx * m.widthPixels, sy * m.heightPixels)
-            lineTo(ex * m.widthPixels, ey * m.heightPixels)
+            moveTo(sx, sy)
+            lineTo(ex, ey)
         }
-        return enqueuePath(path, 420, targetPackage, finish)
+        return enqueuePath(path, profile.durationMs, targetPackage, finish)
     }
 
     private fun enqueuePath(path: Path, duration: Long, targetPackage: String, completion: (Boolean) -> Unit): Boolean {
@@ -203,7 +204,63 @@ class QuizAccessibilityService : AccessibilityService() {
         return true
     }
 
+    private fun fullDisplayMetrics(): DisplayMetrics {
+        // Use the same full display basis as MediaProjection, including system bars.
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
+        return metrics
+    }
+
     fun canPerformGestures(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+
+    /** A click callback is only delivery evidence. The runner must verify the resulting page. */
+    fun tapConfirmationAsync(box: NormalizedBox?, attempt: Int, targetPackage: String, completion: (Boolean) -> Unit) {
+        ConfirmTapDispatcher.dispatch(
+            tapText = { done ->
+                performTextActionClickAsync("确认", targetPackage) { clicked ->
+                    if (clicked) done(true) else tapTextAsync("确认", targetPackage, done)
+                }
+            },
+            tapCoordinates = box?.let { currentBox ->
+                { done ->
+                    val y = currentBox.y + currentBox.height * if (attempt >= 3) 0.65f else 0.5f
+                    tapNormalizedAsync(currentBox.centerX / 100f, y / 100f, targetPackage, done)
+                    Unit
+                }
+            },
+            completion = completion,
+            preferCoordinates = attempt >= 2,
+        )
+    }
+
+    private fun performTextActionClickAsync(text: String, targetPackage: String, completion: (Boolean) -> Unit) {
+        val finish = singleCompletion(completion)
+        gestureHandler.post {
+            if (destroyed || !isTargetForeground(targetPackage)) { finish(false); return@post }
+            val nodes = ArrayList<AccessibilityNodeInfo>()
+            val clicked = try {
+                val root = findTargetRoot(targetPackage)
+                if (root == null) false else {
+                    nodes.add(root)
+                    val matches = root.findAccessibilityNodeInfosByText(text).orEmpty()
+                    nodes.addAll(matches)
+                    var target = matches.firstOrNull {
+                        it.isVisibleToUser && it.isEnabled &&
+                            (it.text?.toString()?.trim() == text || it.contentDescription?.toString()?.trim() == text)
+                    }
+                    var depth = 0
+                    while (target != null && !target.isClickable && depth++ < 5) {
+                        target = target.parent
+                        target?.let(nodes::add)
+                    }
+                    target?.let { it.isVisibleToUser && it.isEnabled && it.isClickable &&
+                        isTargetForeground(targetPackage) && it.performAction(AccessibilityNodeInfo.ACTION_CLICK) } ?: false
+                }
+            } catch (_: Exception) { false } finally { recycleNodes(nodes) }
+            finish(clicked)
+        }
+    }
 
     fun cancelGestures() {
         if (Looper.myLooper() == gestureHandler.looper) {

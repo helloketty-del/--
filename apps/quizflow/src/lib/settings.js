@@ -1,3 +1,4 @@
+import { sanitizeSwipeProfiles, swipeDirection } from './swipeSettings.js';
 export const DEFAULT_ENDPOINT = 'https://api.openai.com/v1';
 export const DEFAULT_MODEL = 'gpt-4o-mini';
 const SETTINGS_STORAGE_KEY = 'quiz-control-settings';
@@ -36,7 +37,8 @@ export function sanitizeSettings(input = {}) {
     questionBankPrompt: String(input.questionBankPrompt || DEFAULT_QUESTION_BANK_PROMPT).trim() || DEFAULT_QUESTION_BANK_PROMPT,
     answerSource,
     mode,
-    navigation: ['auto', 'left', 'right', 'up', 'down'].includes(input.navigation) ? input.navigation : 'auto',
+    navigation: swipeDirection(input.navigation),
+    swipeProfiles: sanitizeSwipeProfiles(input.swipeProfiles),
     autoSubmit: input.autoSubmit === true,
     bankFallback: input.bankFallback !== false,
     minConfidence: Number.isFinite(Number(input.minConfidence)) ? Math.min(1, Math.max(0.5, Number(input.minConfidence))) : 0.85,

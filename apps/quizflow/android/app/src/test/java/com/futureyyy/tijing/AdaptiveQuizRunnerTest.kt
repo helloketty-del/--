@@ -22,7 +22,7 @@ class AdaptiveQuizRunnerTest {
         var defer = false
         var pending: ((Result<FlowObservation>) -> Unit)? = null
         val runner = AdaptiveQuizRunner(
-            QuizRuntimeConfig.fromJson("""{"endpoint":"https://example.test/v1","model":"vision","apiKey":"test","mode":"auto","autoSubmit":true}"""),
+            QuizRuntimeConfig.fromJson("""{"endpoint":"https://example.test/v1","model":"vision","apiKey":"test","mode":"auto","navigation":"up","autoSubmit":true}"""),
             object : CaptureGateway {
                 override fun capture(callback: (Result<CaptureFrame>) -> Unit) = callback(Result.success(
                     CaptureFrame("data:image/jpeg;base64,TEST", FrameSignature.fromBits(BooleanArray(FrameSignature.BIT_COUNT)))))
@@ -36,7 +36,7 @@ class AdaptiveQuizRunnerTest {
             object : FlowGestures {
                 override fun isForeground() = foreground
                 override fun tap(box: NormalizedBox, callback: (Boolean) -> Unit) { actions.add("tap:$box"); callback(true) }
-                override fun swipe(direction: FlowSwipe, callback: (Boolean) -> Unit) { actions.add("swipe:$direction"); callback(true) }
+                override fun swipe(direction: FlowSwipe, navigation: Boolean, callback: (Boolean) -> Unit) { actions.add("swipe:$direction:navigation=$navigation"); callback(true) }
                 override fun cancel() = Unit
             },
             object : RunnerListener {
@@ -60,6 +60,7 @@ class AdaptiveQuizRunnerTest {
         f.runner.onPrimaryAction()
         while (f.queue.isNotEmpty()) f.queue.removeFirst().invoke()
         assertEquals(5, f.actions.size)
+        assertEquals("swipe:UP:navigation=true", f.actions[1])
         assertTrue(f.errors.isEmpty())
         assertEquals(RunnerPhase.STOPPED, f.runner.snapshot().phase)
         assertEquals("已核实提交成功，运行结束", f.runner.snapshot().message)

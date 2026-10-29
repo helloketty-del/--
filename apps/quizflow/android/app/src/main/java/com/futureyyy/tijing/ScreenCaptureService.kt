@@ -673,40 +673,13 @@ class ScreenCaptureService : Service() {
                 }
             }
 
-            override fun tapConfirm(box: NormalizedBox?, callback: (Boolean) -> Unit) {
-                dispatchGestureAfterAnswer(
-                    generation = generation,
-                    callback = callback,
-                    settleDelayMs = CONFIRM_SETTLE_DELAY_MS,
-                ) { service, completion ->
+            override fun tapConfirm(box: NormalizedBox?, callback: (Boolean) -> Unit) = tapConfirmAttempt(box, 1, callback)
+
+            override fun tapConfirmAttempt(box: NormalizedBox?, attempt: Int, callback: (Boolean) -> Unit) {
+                dispatchGestureAfterAnswer(generation, callback, CONFIRM_SETTLE_DELAY_MS) { service, completion ->
                     val targetPackage = resolveTargetPackage(service)
-                    if (targetPackage == null) {
-                        completion(false)
-                        return@dispatchGestureAfterAnswer
-                    }
-                    ConfirmTapDispatcher.dispatch(
-                        tapText = { done ->
-                            debugRunnerGesture("confirm-text-attempt")
-                            service.tapTextAsync("确认", targetPackage, done)
-                            Unit
-                        },
-                        tapCoordinates = box?.let { confirmBox ->
-                            { done ->
-                                debugRunnerGesture(
-                                    "confirm-coordinate-fallback nx=${confirmBox.centerX / 100f} " +
-                                        "ny=${confirmBox.centerY / 100f}",
-                                )
-                                service.tapNormalizedAsync(
-                                    confirmBox.centerX / 100f,
-                                    confirmBox.centerY / 100f,
-                                    targetPackage,
-                                    done,
-                                )
-                                Unit
-                            }
-                        },
-                        completion = completion,
-                    )
+                    if (targetPackage == null) completion(false)
+                    else service.tapConfirmationAsync(box, attempt, targetPackage, completion)
                 }
             }
 
@@ -778,10 +751,18 @@ class ScreenCaptureService : Service() {
                             if (pkg == null) done(false) else service.tapNormalizedAsync(box.centerX / 100f, box.centerY / 100f, pkg, done)
                         }
                     }
-                    override fun swipe(direction: FlowSwipe, callback: (Boolean) -> Unit) {
+                    override fun confirm(box: NormalizedBox?, attempt: Int, callback: (Boolean) -> Unit) {
+                        dispatchGestureAfterAnswer(generation, callback, CONFIRM_SETTLE_DELAY_MS) { service, done ->
+                            val pkg = target
+                            if (pkg == null) done(false) else service.tapConfirmationAsync(box, attempt, pkg, done)
+                        }
+                    }
+                    override fun swipe(direction: FlowSwipe, navigation: Boolean, callback: (Boolean) -> Unit) {
                         dispatchGestureAfterAnswer(generation, callback) { service, done ->
                             val pkg = target
-                            if (pkg == null) done(false) else service.swipeAsync(direction, pkg, done)
+                            if (pkg == null) done(false) else if (navigation) {
+                                service.swipePathAsync(config.swipeProfiles.getValue(direction), pkg, done)
+                            } else service.swipeAsync(direction, pkg, done)
                         }
                     }
                     override fun cancel() = gestureGateway.cancel()
@@ -891,6 +872,7 @@ class ScreenCaptureService : Service() {
         val finish: (Boolean) -> Unit = { succeeded ->
             if (completed.compareAndSet(false, true)) {
                 debugRunnerGesture("callback success=$succeeded")
+                overlayController?.restoreAfterCapture()
                 callback(succeeded)
             }
         }
@@ -925,11 +907,13 @@ class ScreenCaptureService : Service() {
                 }
             }
             val dispatchAfterCollapse: () -> Unit = {
-                if (settleDelayMs > 0L) {
-                    mainHandler.postDelayed(runGesture, settleDelayMs)
-                } else {
-                    runGesture()
+                val afterHidden = {
+                    if (settleDelayMs > 0L) mainHandler.postDelayed(runGesture, settleDelayMs)
+                    else runGesture()
+                    Unit
                 }
+                // A floating bubble or answer control can otherwise intercept the target tap.
+                overlayController?.hideForCapture(afterHidden) ?: afterHidden()
                 Unit
             }
             debugRunnerGesture("waiting-for-overlay-collapse")

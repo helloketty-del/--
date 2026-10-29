@@ -74,6 +74,7 @@ data class FlowObservation(
 sealed class FlowAction {
     data class Tap(val box: NormalizedBox, val purpose: String) : FlowAction()
     data class Swipe(val direction: FlowSwipe, val navigation: Boolean = false) : FlowAction()
+    data class Confirm(val box: NormalizedBox?, val attempt: Int) : FlowAction()
     data class Pause(val reason: String) : FlowAction()
     data object Wait : FlowAction()
     data object Done : FlowAction()
@@ -81,14 +82,14 @@ sealed class FlowAction {
 
 /** Decisions never use coordinates from previous screenshots. Each tap is re-observed. */
 class AutomationPolicy(
-    private val navigation: String = "auto",
+    private val navigation: String = "confirm",
     private val autoSubmit: Boolean = false,
     private val minConfidence: Double = 0.85,
     private val maxScrolls: Int = 12,
 ) {
     private var questionKey = ""
     private var awaitingNext = false
-    private var confirmed = false
+    private var confirmationAttempts = 0
     private var singleTapMayAdvance = false
     private var stableAnswers: Set<String>? = null
     private var scrolls = 0
@@ -142,7 +143,7 @@ class AutomationPolicy(
             }
             questionKey = o.key
             awaitingNext = false
-            confirmed = false
+            confirmationAttempts = 0
             singleTapMayAdvance = false
             stableAnswers = null
             visibleNumber = null
@@ -152,7 +153,7 @@ class AutomationPolicy(
             lastAction = ""
         } else if (awaitingNext) {
             // Never toggle answers while waiting for navigation to finish.
-            if (o.last && (o.confirm == null || confirmed)) return submit(o)
+            if (o.last && (navigation != "confirm" || o.confirm == null)) return submit(o)
             return navigate(o)
         }
         if (o.number != null) visibleNumber = o.number
@@ -189,22 +190,24 @@ class AutomationPolicy(
         completedQuestions += 1
         visibleNumber?.let(completedNumbers::add)
         awaitingNext = true
-        if (o.last && o.confirm == null) return submit(o)
+        if (o.last && (navigation != "confirm" || o.confirm == null)) return submit(o)
         return navigate(o)
     }
 
     private fun navigate(o: FlowObservation): FlowAction {
-        if (!confirmed) o.confirm?.let {
-            confirmed = true
-            return guarded("confirm", FlowAction.Tap(it, "确认本题"))
+        if (navigation == "confirm") {
+            if (o.confirm != null) {
+                confirmationAttempts += 1
+                return guarded("confirm", FlowAction.Confirm(o.confirm, confirmationAttempts))
+            }
+            o.next?.let { return guarded("next", FlowAction.Tap(it, "下一题")) }
+            return guarded("wait-next", FlowAction.Wait)
         }
-        o.next?.let { return guarded("next", FlowAction.Tap(it, "下一题")) }
+        // Page navigation is always a real screen swipe, regardless of visible buttons.
         val direction = when (navigation) {
             "left" -> FlowSwipe.LEFT
             "right" -> FlowSwipe.RIGHT
-            "up" -> FlowSwipe.UP
-            "down" -> FlowSwipe.DOWN
-            else -> return guarded("wait-next", FlowAction.Wait)
+            else -> FlowSwipe.UP
         }
         return guarded("navigate:$direction", FlowAction.Swipe(direction, true))
     }

@@ -12,6 +12,7 @@ internal object ConfirmTapDispatcher {
         tapText: ((Boolean) -> Unit) -> Unit,
         tapCoordinates: (((Boolean) -> Unit) -> Unit)?,
         completion: (Boolean) -> Unit,
+        preferCoordinates: Boolean = false,
     ) {
         val completed = AtomicBoolean(false)
         val coordinateAttempted = AtomicBoolean(false)
@@ -33,6 +34,10 @@ internal object ConfirmTapDispatcher {
             }
         }
 
+        if (preferCoordinates && tapCoordinates != null) {
+            fallbackToCoordinates()
+            return
+        }
         try {
             tapText { succeeded ->
                 if (succeeded) finish(true) else fallbackToCoordinates()

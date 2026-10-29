@@ -1,3 +1,5 @@
+import SwipeSettings from './SwipeSettings.jsx';
+import { swipeProfileError } from './lib/swipeSettings.js';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
@@ -410,6 +412,8 @@ function App() {
         setView('settings');
         return;
       }
+      const swipeError = swipeProfileError(settingsRef.current);
+      if (swipeError) { notify(swipeError); setFloatingSessionPreparing(false); return; }
       const accepted = startFloatingSession({...sanitizeSettings(settingsRef.current), apiKey});
       if (!accepted) {
         setError('练题流原生桥启动失败，请重试');
@@ -645,6 +649,8 @@ function App() {
       return;
     }
     const currentSettings = settingsRef.current;
+    const swipeError = swipeProfileError(currentSettings);
+    if (swipeError) { notify(swipeError); return; }
     const safe = sanitizeSettings(currentSettings);
     const savedSettings = { ...currentSettings, ...safe };
     saveBrowserSettings({ ...safe, apiKey: currentSettings.apiKey || '' });
@@ -782,7 +788,7 @@ function App() {
           <div className="bridge-card-head"><span className="status-dot status-dot-live" /> ANDROID BRIDGE</div>
           <p>安卓端支持屏幕捕获、模型识别、自动点击与滑动。</p>
           <div className="bridge-progress"><span style={{ width: '100%' }} /></div>
-          <div className="bridge-meta"><span>ANDROID BUILD</span><strong>0.8.0</strong></div>
+          <div className="bridge-meta"><span>ANDROID BUILD</span><strong>0.8.1</strong></div>
         </div>
         <div className="sidebar-footer"><ShieldCheck size={14} /> 本地配置优先 · Key 脱敏</div>
       </aside>
@@ -1010,7 +1016,7 @@ function SettingsView({ settings, serverConfig, connection, testBusy, canEdit, o
         <div className="field-grid"><Field label="API URL" hint="支持 base URL 或 /chat/completions" value={settings.endpoint} onChange={(value) => onChange('endpoint', value)} disabled={!canEdit} wide /><Field label="模型名称" hint="当前预设来自本地环境" value={settings.model} onChange={(value) => onChange('model', value)} disabled={!canEdit} /><label className="field-block"><span>答案来源</span><select value={settings.answerSource} onChange={(event) => onChange('answerSource', event.target.value)} disabled={!canEdit}><option value="vision">视觉模型直接解题</option><option value="question_bank">本地题库匹配</option></select><small>题库提供答案，视觉模型定位当前选项；支持自动模式。</small></label><label className="field-block"><span>题目目标</span><select value={settings.targetApp} onChange={(event) => onChange('targetApp', event.target.value)} disabled={!canEdit}><option value="auto">自动识别当前题目页</option><option value="wechat">微信题库（优先）</option><option value="simulator">题库模拟器（优先）</option></select><small>默认跟随当前前台题目页，不会强制打开微信。</small></label><label className="field-block"><span>起始题号</span><input type="number" min="1" max="9999" value={settings.startQuestionNo || 1} onChange={(event) => onChange('startQuestionNo', Number(event.target.value) || 1)} disabled={!canEdit} /><small>采集模式从这一题开始编号，默认 1。</small></label><div className="field-block"><label>API Key <span>本机保存</span></label><div className="secret-field"><KeyRound size={15} /><input type="password" value={settings.apiKey || ''} placeholder={serverConfig.keyConfigured ? '本地代理已配置，留空即可' : '粘贴模型 Key'} onChange={(event) => onChange('apiKey', event.target.value)} disabled={!canEdit} /><span className="secret-mask">{settings.apiKey ? maskSecret(settings.apiKey) : serverConfig.keyConfigured ? 'ENV ••••' : '—'}</span></div><small>Key 保存在本机应用数据中，页面日志保持脱敏。</small></div></div>
         <div className="settings-actions"><button className="button button-primary" onClick={onSave} disabled={!canEdit}><Save size={15} /> 保存配置</button><button className="button button-quiet" onClick={onTest} disabled={testBusy}><Wifi size={15} /> {testBusy ? '测试中…' : '测试连接'}</button></div>
       </div>
-      <div className="settings-side panel-dark"><div className="panel-title-row compact"><div><span className="panel-index">02</span><div><h3>运行策略</h3><p>SESSION BEHAVIOR</p></div></div><Activity size={16} /></div><div className="strategy-card"><div className="strategy-icon"><Zap size={17} /></div><div><strong>自动刷题</strong><span>识别、核对选中状态、翻题；按开关决定是否最终提交。</span></div><button className={`toggle ${settings.mode === 'auto' ? 'toggle-on' : ''}`} onClick={() => onChange('mode', settings.mode === 'auto' ? 'manual' : 'auto')} disabled={!canEdit} aria-label="切换自动模式"><i /></button></div><div className="strategy-card"><div className="strategy-icon"><CircleHelp size={17} /></div><div><strong>手动辅助</strong><span>只展示答案，下一题由你点击。</span></div><button className={`toggle ${settings.mode === 'manual' ? 'toggle-on' : ''}`} onClick={() => onChange('mode', settings.mode === 'manual' ? 'auto' : 'manual')} disabled={!canEdit} aria-label="切换手动模式"><i /></button></div><div className="strategy-card"><div className="strategy-icon"><ScanLine size={17} /></div><div><strong>采集模式</strong><span>只截图识别不答题；点悬浮球开始/停止，跳题靠你摆放的“跳”按钮。</span></div><button className={`toggle ${settings.mode === 'capture' ? 'toggle-on' : ''}`} onClick={() => onChange('mode', settings.mode === 'capture' ? 'manual' : 'capture')} disabled={!canEdit} aria-label="切换采集模式"><i /></button></div><label className="field-block"><span>翻题方式</span><select value={settings.navigation || 'auto'} onChange={(e) => onChange('navigation', e.target.value)} disabled={!canEdit}><option value="auto">点击确认 / 下一题按钮</option><option value="left">无按钮时向左滑</option><option value="right">无按钮时向右滑</option><option value="up">无按钮时向上滑</option><option value="down">无按钮时向下滑</option></select></label>
+      <div className="settings-side panel-dark"><div className="panel-title-row compact"><div><span className="panel-index">02</span><div><h3>运行策略</h3><p>SESSION BEHAVIOR</p></div></div><Activity size={16} /></div><div className="strategy-card"><div className="strategy-icon"><Zap size={17} /></div><div><strong>自动刷题</strong><span>识别、核对选中状态、翻题；按开关决定是否最终提交。</span></div><button className={`toggle ${settings.mode === 'auto' ? 'toggle-on' : ''}`} onClick={() => onChange('mode', settings.mode === 'auto' ? 'manual' : 'auto')} disabled={!canEdit} aria-label="切换自动模式"><i /></button></div><div className="strategy-card"><div className="strategy-icon"><CircleHelp size={17} /></div><div><strong>手动辅助</strong><span>只展示答案，下一题由你点击。</span></div><button className={`toggle ${settings.mode === 'manual' ? 'toggle-on' : ''}`} onClick={() => onChange('mode', settings.mode === 'manual' ? 'auto' : 'manual')} disabled={!canEdit} aria-label="切换手动模式"><i /></button></div><div className="strategy-card"><div className="strategy-icon"><ScanLine size={17} /></div><div><strong>采集模式</strong><span>只截图识别不答题；点悬浮球开始/停止，跳题靠你摆放的“跳”按钮。</span></div><button className={`toggle ${settings.mode === 'capture' ? 'toggle-on' : ''}`} onClick={() => onChange('mode', settings.mode === 'capture' ? 'manual' : 'capture')} disabled={!canEdit} aria-label="切换采集模式"><i /></button></div><SwipeSettings settings={settings} onChange={onChange} disabled={!canEdit} />
         <label className="field-block"><span>页面等待时间（毫秒）</span><input type="number" min="500" max="10000" value={settings.settleMs || 1000} onChange={(e) => onChange('settleMs', Number(e.target.value))} disabled={!canEdit} /></label>
         <label className="field-block"><span><input type="checkbox" checked={settings.autoSubmit === true} onChange={(e) => onChange('autoSubmit', e.target.checked)} disabled={!canEdit} /> 最后自动提交</span><small>仅在明确识别末题或答题卡、页面显示未答题数为 0 或已逐题核实全部题号时交卷；随后核对提交结果。</small></label>
         <label className="field-block"><span><input type="checkbox" checked={settings.bankFallback !== false} onChange={(e) => onChange('bankFallback', e.target.checked)} disabled={!canEdit} /> 题库未命中时由模型解题</span></label>

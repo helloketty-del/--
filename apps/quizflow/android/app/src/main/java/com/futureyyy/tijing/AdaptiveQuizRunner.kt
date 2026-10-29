@@ -3,7 +3,10 @@ package com.futureyyy.tijing
 interface FlowGestures {
     fun isForeground(): Boolean
     fun tap(box: NormalizedBox, callback: (Boolean) -> Unit)
-    fun swipe(direction: FlowSwipe, callback: (Boolean) -> Unit)
+    fun confirm(box: NormalizedBox?, attempt: Int, callback: (Boolean) -> Unit) {
+        if (box == null) callback(false) else tap(box, callback)
+    }
+    fun swipe(direction: FlowSwipe, navigation: Boolean, callback: (Boolean) -> Unit)
     fun cancel()
 }
 
@@ -80,7 +83,8 @@ class AdaptiveQuizRunner(
                     FlowAction.Done -> { completionMessage = "已核实提交成功，运行结束"; stop() }
                     FlowAction.Wait -> schedule(token)
                     is FlowAction.Tap -> execute(token) { done -> gestures.tap(action.box, done) }
-                    is FlowAction.Swipe -> execute(token) { done -> gestures.swipe(action.direction, done) }
+                    is FlowAction.Swipe -> execute(token) { done -> gestures.swipe(action.direction, action.navigation, done) }
+                    is FlowAction.Confirm -> execute(token) { done -> gestures.confirm(action.box, action.attempt, done) }
                 }
             } }
         } }

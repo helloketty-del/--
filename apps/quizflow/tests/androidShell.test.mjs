@@ -137,7 +137,7 @@ test('Android native runner exposes asynchronous model and gesture APIs', () => 
   assert.match(accessibilityService, /findTargetRoot\(targetPackage: String\)/);
   assert.match(accessibilityService, /findForegroundApplicationRoot\(\)/);
   assert.match(accessibilityService, /windows/);
-  assert.doesNotMatch(accessibilityService, /performAction\(AccessibilityNodeInfo\.ACTION_CLICK\)/);
+  assert.match(accessibilityService, /performAction\(AccessibilityNodeInfo\.ACTION_CLICK\)/);
   assert.match(accessibilityService, /private fun recycleNodes\(/);
   assert.doesNotMatch(accessibilityService, /matches\.firstOrNull \{ it\.isVisibleToUser \}/);
   assert.match(accessibilityService, /pending\.completion\(succeeded\)/);
@@ -172,7 +172,7 @@ test('Android foreground service hosts the native overlay runner', () => {
     screenCaptureService,
     /if \(!overlay\.show\(\)\)[\s\S]*terminateCaptureSession\("悬浮窗创建失败/,
   );
-  assert.match(screenCaptureService, /tapTextAsync\("确认"/);
+  assert.match(screenCaptureService, /tapConfirmationAsync\(box, attempt/);
   assert.match(screenCaptureService, /CONFIRM_SETTLE_DELAY_MS/);
   assert.match(screenCaptureService, /private var activeTargetPackage: String\? = null/);
   assert.match(screenCaptureService, /resolveTargetPackage\(service: QuizAccessibilityService\)/);
@@ -180,7 +180,7 @@ test('Android foreground service hosts the native overlay runner', () => {
   assert.doesNotMatch(screenCaptureService, /tapTextAsync\("下一题"/);
   assert.match(runCoordinator, /AutoCheckpointStage\.CONFIRM_BASELINE/);
   assert.match(runCoordinator, /AutoCheckpointStage\.CONFIRM/);
-  assert.match(runCoordinator, /gestureGateway\.tapConfirm\(plan\.confirmBox\)/);
+  assert.match(runCoordinator, /gestureGateway\.tapConfirmAttempt\(plan\.confirmBox, confirmTapAttempts\)/);
   assert.match(runCoordinator, /MAX_CONFIRM_TAP_ATTEMPTS = 3/);
   assert.match(runCoordinator, /CONFIRM_RETRY_DELAY_MS = 350L/);
 });

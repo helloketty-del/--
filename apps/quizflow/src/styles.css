@@ -247,3 +247,17 @@ h1 em { color: #718078; font: 500 0.62em Newsreader, Georgia, serif; letter-spac
 .settings-side.panel-dark .field-block > span { display: flex; align-items: center; gap: 9px; }
 .settings-side .field-block input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; margin: 0; accent-color: #c6f477; }
 .settings-side .field-block textarea { width: 100%; min-height: 84px; padding: 10px; border: 1px solid #68786f; border-radius: 4px; color: #20352b; background: #fffdf7; font: inherit; resize: vertical; }
+
+.swipe-settings { margin-top: 20px; border-top: 1px solid #41574d; padding-top: 2px; }
+.swipe-preview-row { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
+.swipe-preview { flex: 0 0 116px; width: 116px; height: 206px; border: 1px solid #81958b; border-radius: 10px; background: #20382e; touch-action: none; user-select: none; }
+.swipe-preview circle { cursor: grab; }
+.swipe-preview-help { flex: 1; color: #b8c9be; font-size: 11px; line-height: 1.6; }
+.swipe-preview-help strong { color: #f6f2e9; }
+.swipe-preview-help p { margin-top: 10px; }
+.swipe-dot { display: inline-block; width: 8px; height: 8px; margin-right: 5px; border-radius: 50%; }
+.swipe-dot-start { background: #85d3ff; }.swipe-dot-end { background: #f28b5d; }
+.swipe-coordinate-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); column-gap: 14px; }
+.swipe-coordinate input[type="range"] { width: 100%; margin-top: 8px; accent-color: #c6f477; }
+.swipe-error { color: #ffae8c; font-size: 11px; line-height: 1.6; margin-top: 12px; }
+.swipe-reset { background: #20382e; color: #c6f477; margin-top: 12px; border-color: #68786f; }

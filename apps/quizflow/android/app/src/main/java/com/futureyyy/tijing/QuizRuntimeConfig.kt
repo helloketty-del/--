@@ -48,7 +48,8 @@ data class QuizRuntimeConfig(
     val timeoutMs: Int,
     val retryCount: Int,
     val startingQuestionNo: Int = 1,
-    val navigation: String = "auto",
+    val navigation: String = "confirm",
+    val swipeProfiles: Map<FlowSwipe, SwipePath> = SwipePath.defaults(),
     val autoSubmit: Boolean = false,
     val bankFallback: Boolean = true,
     val minConfidence: Double = 0.85,
@@ -145,9 +146,15 @@ data class QuizRuntimeConfig(
                 timeoutMs = timeoutMs,
                 retryCount = retryCount,
                 startingQuestionNo = startingQuestionNo,
-                navigation = optionalText(json, "navigation", "auto").also {
-                    require(it in setOf("auto", "left", "right", "up", "down")) { "翻题方式无效" }
+                navigation = optionalText(json, "navigation", "confirm").let {
+                    when (it) {
+                        "auto" -> "confirm"
+                        "down" -> "up"
+                        "confirm", "up", "left", "right" -> it
+                        else -> throw IllegalArgumentException("翻题方向必须是上滑、左滑或右滑")
+                    }
                 },
+                swipeProfiles = SwipePath.parseProfiles(json.get("swipeProfiles")),
                 autoSubmit = json.get("autoSubmit")?.asBoolean ?: false,
                 bankFallback = json.get("bankFallback")?.asBoolean ?: true,
                 minConfidence = (json.get("minConfidence")?.asDouble ?: 0.85).also {
