@@ -15,6 +15,7 @@ data class SweptAnswer(
 )
 
 interface CaptureSweepListener {
+    fun onNavigationError(message: String) = Unit
     fun onProgress(questionNo: Int, recognized: Int, pending: Int)
     fun onFinished(answers: List<SweptAnswer>)
 }
@@ -41,6 +42,8 @@ class CaptureSweep(
     private var pending = 0
     private var drainPending = false
     private var captureFailures = 0
+    private var lastSignature: FrameSignature? = null
+    private var unchangedPolls = 0
 
     val isRunning: Boolean
         get() = synchronized(lock) { running }
@@ -55,6 +58,8 @@ class CaptureSweep(
             pending = 0
             drainPending = false
             captureFailures = 0
+            lastSignature = null
+            unchangedPolls = 0
         }
         step()
     }
@@ -93,9 +98,30 @@ class CaptureSweep(
                 if (exhausted) stop() else scheduler.schedule(settleDelayMs) { step() }
                 return@capture
             }
-            synchronized(lock) { captureFailures = 0 }
+            val unchanged = synchronized(lock) {
+                captureFailures = 0
+                val same = lastSignature == frame.signature
+                lastSignature = frame.signature
+                same
+            }
+            if (unchanged) {
+                val polls = synchronized(lock) { ++unchangedPolls }
+                if (polls < 3) scheduler.schedule(settleDelayMs) { step() }
+                else {
+                    listener.onNavigationError("页面没有变化：请调整点击/滑动位置或增加等待时间，先用动作测试验证")
+                    stop()
+                }
+                return@capture
+            }
+            synchronized(lock) { unchangedPolls = 0 }
             requestModel(frame, currentNo)
-            tapNext { _ ->
+            tapNext { success ->
+                if (!synchronized(lock) { running }) return@tapNext
+                if (!success) {
+                    listener.onNavigationError("翻页动作未发出，请检查目标页面和无障碍权限")
+                    stop()
+                    return@tapNext
+                }
                 val advance = synchronized(lock) {
                     if (!running) {
                         false

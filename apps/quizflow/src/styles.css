@@ -261,3 +261,7 @@ h1 em { color: #718078; font: 500 0.62em Newsreader, Georgia, serif; letter-spac
 .swipe-coordinate input[type="range"] { width: 100%; margin-top: 8px; accent-color: #c6f477; }
 .swipe-error { color: #ffae8c; font-size: 11px; line-height: 1.6; margin-top: 12px; }
 .swipe-reset { background: #20382e; color: #c6f477; margin-top: 12px; border-color: #68786f; }
+
+.tap-point-fields { margin-top: 18px; padding-top: 12px; border-top: 1px solid #41574d; }
+.tap-point-fields > strong { color: #f6f2e9; font-size: 12px; }
+.swipe-test { width: 100%; margin: 18px 0 10px; }

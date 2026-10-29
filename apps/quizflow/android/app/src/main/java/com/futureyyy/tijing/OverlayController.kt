@@ -61,6 +61,7 @@ class OverlayController(
     private var autoCollapseAtMs = 0L
     private var pendingAfterCollapse: (() -> Unit)? = null
 
+    private var gestureTestMode = false
     private var captureMode = false
     private var sweepRunning = false
     private var markerView: View? = null
@@ -168,7 +169,6 @@ class OverlayController(
     }
 
     fun showError(message: String) = onMain {
-        if (captureMode) return@onMain
         showErrorOnMain(message)
     }
 
@@ -546,7 +546,7 @@ class OverlayController(
                         params.x = screenWidth() - bubbleSize - edgeMargin
                         updateBubbleLayout(view, params)
                     } else if (event.eventTime - event.downTime >= LONG_PRESS_MS) {
-                        if (canPause(latestSnapshot)) runCatching { callbacks.onPause() }
+                        if (gestureTestMode) runCatching { callbacks.onStop() } else if (canPause(latestSnapshot)) runCatching { callbacks.onPause() }
                     } else {
                         view.performClick()
                         handleBubbleClick()
@@ -568,6 +568,7 @@ class OverlayController(
     }
 
     private fun handleBubbleClick() {
+        if (gestureTestMode) { runCatching { callbacks.onPrimaryAction() }; return }
         if (captureMode) {
             if (sweepRunning) runCatching { callbacks.onStop() } else runCatching { callbacks.onPrimaryAction() }
             return
@@ -597,12 +598,33 @@ class OverlayController(
         }
     }
 
+    fun setGestureTestMode() = onMain {
+        gestureTestMode = true
+        ensureViews()
+        cardActions?.apply {
+            removeAllViews()
+            addView(actionButton("测试翻页") { callbacks.onPrimaryAction() })
+            addView(actionButton("停止", destructive = true) { callbacks.onStop() })
+            visibility = View.VISIBLE
+        }
+        showGestureTestStatus("请先打开题目页，再点击测试翻页。只执行一次，不调用 AI。")
+    }
+
+    fun showGestureTestStatus(message: String) = onMain {
+        cardTitle?.text = "翻页动作测试"
+        cardStatus?.text = "不调用 AI · 长按悬浮球可停止"
+        cardBody?.text = message
+        bubbleLabel?.text = "测试翻页"
+        bubbleView?.contentDescription = "测试配置的翻页动作"
+        showCard()
+    }
+
     fun setCaptureMode(enabled: Boolean) = onMain {
         captureMode = enabled
         if (enabled) {
             ensureViews()
             cardView?.visibility = View.GONE
-            if (markerView == null) createMarker()
+            removeMarker()
             if (answerButtonView == null) createAnswerButton()
         } else {
             removeMarker()

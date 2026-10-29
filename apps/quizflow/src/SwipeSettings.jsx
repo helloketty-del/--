@@ -1,11 +1,12 @@
+import CustomClickSettings from './CustomClickSettings.jsx';
 import React, { useRef, useState } from 'react';
 import { SWIPE_DEFAULTS, sanitizeSwipeProfiles, swipeDirection, swipeProfileError } from './lib/swipeSettings.js';
 
-export default function SwipeSettings({ settings, onChange, disabled }) {
+export default function SwipeSettings({ settings, onChange, onTestGesture, disabled }) {
   const svgRef = useRef(null);
   const [dragging, setDragging] = useState(null);
   const mode = swipeDirection(settings.navigation);
-  const direction = mode === 'confirm' ? 'up' : mode;
+  const direction = ['confirm', 'tap'].includes(mode) ? 'up' : mode;
   const profiles = sanitizeSwipeProfiles(settings.swipeProfiles);
   const profile = profiles[direction];
   const error = swipeProfileError(settings);
@@ -24,16 +25,18 @@ export default function SwipeSettings({ settings, onChange, disabled }) {
     setDragging(point);
   };
   return <div className="swipe-settings">
-    <label className="field-block"><span>翻题方向</span>
+    <label className="field-block"><span>翻页方式</span>
       <select value={mode} onChange={e => onChange('navigation', e.target.value)} disabled={disabled}>
+        <option value="tap">自定义点击</option>
         <option value="confirm">确认按钮（失败时换方式重试）</option>
         <option value="up">上滑（手指向上）</option>
         <option value="left">左滑（手指向左）</option>
         <option value="right">右滑（手指向右）</option>
       </select>
-      <small>{mode === 'confirm' ? '保留原有确认翻题流程；只有页面实际变化才继续。' : '答完本题后直接在屏幕上滑动。'}</small>
+      <small>{mode === 'confirm' ? '保留原有确认翻题流程。' : mode === 'tap' ? '直接点击你指定的位置，不依赖 AI 定位翻页按钮。' : '直接在屏幕上滑动；采集模式也使用此设置。'}</small>
     </label>
-    {mode !== 'confirm' && <>
+    {mode === 'tap' && <CustomClickSettings settings={settings} onChange={onChange} disabled={disabled} />}
+    {!['confirm', 'tap'].includes(mode) && <>
     <div className="swipe-preview-row">
       <svg ref={svgRef} className="swipe-preview" viewBox="0 0 100 178" preserveAspectRatio="none"
         role="img" aria-label="滑动轨迹预览，可拖动起点和终点" onPointerMove={drag}
@@ -69,5 +72,7 @@ export default function SwipeSettings({ settings, onChange, disabled }) {
     <button type="button" className="button button-quiet swipe-reset" disabled={disabled}
       onClick={() => onChange('swipeProfiles', { ...profiles, [direction]: { ...SWIPE_DEFAULTS[direction] } })}>恢复本方向默认范围</button>
     </>}
+    <button type="button" className="button button-primary swipe-test" disabled={disabled} onClick={onTestGesture}>动作测试（不调用 AI）</button>
+    <p className="swipe-preview-help">启动后打开目标题目页，再点悬浮窗的“测试翻页”。测试只执行一次，便于检查点击位置或滑动范围。</p>
   </div>;
 }

@@ -3,6 +3,7 @@ package com.futureyyy.tijing
 interface FlowGestures {
     fun isForeground(): Boolean
     fun tap(box: NormalizedBox, callback: (Boolean) -> Unit)
+    fun tapPoint(point: TapPoint, callback: (Boolean) -> Unit) = tap(point.box(), callback)
     fun confirm(box: NormalizedBox?, attempt: Int, callback: (Boolean) -> Unit) {
         if (box == null) callback(false) else tap(box, callback)
     }
@@ -28,7 +29,7 @@ class AdaptiveQuizRunner(
     private val frames = mutableListOf<CaptureFrame>()
     private var policy = newPolicy()
 
-    private fun newPolicy() = AutomationPolicy(config.navigation, config.autoSubmit, config.minConfidence, config.maxScrolls)
+    private fun newPolicy() = AutomationPolicy(config.navigation, config.autoSubmit, config.minConfidence, config.maxScrolls, config.customClicks)
 
     @Synchronized override fun onPrimaryAction() { if (phase == RunnerPhase.READY) observe() }
     @Synchronized override fun pause() { fail("已暂停") }
@@ -84,6 +85,7 @@ class AdaptiveQuizRunner(
                     FlowAction.Wait -> schedule(token)
                     is FlowAction.Tap -> execute(token) { done -> gestures.tap(action.box, done) }
                     is FlowAction.Swipe -> execute(token) { done -> gestures.swipe(action.direction, action.navigation, done) }
+                    is FlowAction.CustomTap -> execute(token) { done -> gestures.tapPoint(action.point, done) }
                     is FlowAction.Confirm -> execute(token) { done -> gestures.confirm(action.box, action.attempt, done) }
                 }
             } }

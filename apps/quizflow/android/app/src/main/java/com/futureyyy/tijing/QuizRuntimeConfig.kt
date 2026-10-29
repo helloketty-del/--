@@ -49,6 +49,8 @@ data class QuizRuntimeConfig(
     val retryCount: Int,
     val startingQuestionNo: Int = 1,
     val navigation: String = "confirm",
+    val customClicks: CustomClicks = CustomClicks(),
+    val gestureTestOnly: Boolean = false,
     val swipeProfiles: Map<FlowSwipe, SwipePath> = SwipePath.defaults(),
     val autoSubmit: Boolean = false,
     val bankFallback: Boolean = true,
@@ -107,7 +109,8 @@ data class QuizRuntimeConfig(
             val endpoint = requiredText(json, "endpoint")
             requireValidEndpoint(endpoint)
             val model = requiredText(json, "model")
-            val apiKey = requiredText(json, "apiKey")
+            val gestureTestOnly = json.get("gestureTestOnly")?.asBoolean ?: false
+            val apiKey = if (gestureTestOnly) optionalText(json, "apiKey", "") else requiredText(json, "apiKey")
             val prompt = optionalText(json, "prompt", DEFAULT_PROMPT).trim().ifBlank { DEFAULT_PROMPT }
             val questionBankPrompt = optionalText(json, "questionBankPrompt", DEFAULT_QUESTION_BANK_PROMPT)
                 .trim()
@@ -150,11 +153,13 @@ data class QuizRuntimeConfig(
                     when (it) {
                         "auto" -> "confirm"
                         "down" -> "up"
-                        "confirm", "up", "left", "right" -> it
+                        "confirm", "tap", "up", "left", "right" -> it
                         else -> throw IllegalArgumentException("翻题方向必须是上滑、左滑或右滑")
                     }
                 },
                 swipeProfiles = SwipePath.parseProfiles(json.get("swipeProfiles")),
+                customClicks = CustomClicks.parse(json.get("customClicks")),
+                gestureTestOnly = gestureTestOnly,
                 autoSubmit = json.get("autoSubmit")?.asBoolean ?: false,
                 bankFallback = json.get("bankFallback")?.asBoolean ?: true,
                 minConfidence = (json.get("minConfidence")?.asDouble ?: 0.85).also {

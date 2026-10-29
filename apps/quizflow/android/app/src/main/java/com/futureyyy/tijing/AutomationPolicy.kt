@@ -27,7 +27,7 @@ data class FlowObservation(
     val popup: PopupObservation? = null,
 ) {
     companion object {
-        fun parse(raw: String, imageWidth: Int? = null, imageHeight: Int? = null): FlowObservation {
+        fun parse(raw: String, imageWidth: Int? = null, imageHeight: Int? = null, ignoreNavigationBoxes: Boolean = false): FlowObservation {
             val text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
             val json = JsonParser.parseString(text).asJsonObject
             fun str(name: String) = json.get(name)?.takeUnless { it.isJsonNull }?.asString ?: ""
@@ -60,7 +60,7 @@ data class FlowObservation(
                 str("question_key"), str("question"), bool("question_complete"), options,
                 json.getAsJsonArray("answer_texts")?.map { it.asString }.orEmpty(),
                 str("scroll_direction").takeIf { it.isNotEmpty() && it != "none" }?.let { FlowSwipe.valueOf(it.uppercase()) },
-                box("confirm_box"), box("next_box"), box("submit_box"), box("submit_confirm_box"),
+                if (ignoreNavigationBoxes) null else box("confirm_box"), if (ignoreNavigationBoxes) null else box("next_box"), box("submit_box"), box("submit_confirm_box"),
                 bool("is_last_question"), unanswered, bool("submission_succeeded"), number, total,
                 if (str("page_kind").equals("popup", true)) PopupObservation(str("popup_kind"), str("popup_title"),
                     str("popup_message"), str("popup_button_text"), box("popup_button_box")) else null,
@@ -73,6 +73,7 @@ sealed class FlowAction {
     data class Tap(val box: NormalizedBox, val purpose: String) : FlowAction()
     data class Swipe(val direction: FlowSwipe, val navigation: Boolean = false) : FlowAction()
     data class Confirm(val box: NormalizedBox?, val attempt: Int) : FlowAction()
+    data class CustomTap(val point: TapPoint, val purpose: String) : FlowAction()
     data class Pause(val reason: String) : FlowAction()
     data object Wait : FlowAction()
     data object Done : FlowAction()
@@ -84,10 +85,12 @@ class AutomationPolicy(
     private val autoSubmit: Boolean = false,
     private val minConfidence: Double = 0.85,
     private val maxScrolls: Int = 12,
+    private val customClicks: CustomClicks = CustomClicks(),
 ) {
     private var questionKey = ""
     private var awaitingNext = false
     private var confirmationAttempts = 0
+    private var customConfirmSent = false
     private var questionConfirmed = false
     private var popupAttempts = 0
     private var singleTapMayAdvance = false
@@ -114,6 +117,7 @@ class AutomationPolicy(
             if (++popupAttempts > 3) return FlowAction.Pause("弹窗连续出现，已暂停以避免重复操作")
             val action = PopupHandling.decide(o.popup, confirmationAttempts > 0 || awaitingNext || singleTapMayAdvance)
             if (action is FlowAction.Tap && PopupHandling.confirmsAnswer(o.popup)) questionConfirmed = true
+            if (o.popup?.kind == "answer_feedback" && !PopupHandling.confirmsAnswer(o.popup)) customConfirmSent = false
             return action
         }
         popupAttempts = 0
@@ -151,6 +155,7 @@ class AutomationPolicy(
             questionKey = o.key
             awaitingNext = false
             confirmationAttempts = 0
+            customConfirmSent = false
             questionConfirmed = false
             singleTapMayAdvance = false
             stableAnswers = null
@@ -161,7 +166,7 @@ class AutomationPolicy(
             lastAction = ""
         } else if (awaitingNext) {
             // Never toggle answers while waiting for navigation to finish.
-            if (o.last && (navigation != "confirm" || o.confirm == null || questionConfirmed)) return submit(o)
+            if (o.last && !needsConfirmation(o)) return submit(o)
             return navigate(o)
         }
         if (o.number != null) visibleNumber = o.number
@@ -198,11 +203,22 @@ class AutomationPolicy(
         completedQuestions += 1
         visibleNumber?.let(completedNumbers::add)
         awaitingNext = true
-        if (o.last && (navigation != "confirm" || o.confirm == null || questionConfirmed)) return submit(o)
+        if (o.last && !needsConfirmation(o)) return submit(o)
         return navigate(o)
     }
 
+    private fun needsConfirmation(o: FlowObservation): Boolean = !questionConfirmed &&
+        ((navigation == "confirm" && o.confirm != null) || (navigation == "tap" && customClicks.confirmFirst && !customConfirmSent))
+
     private fun navigate(o: FlowObservation): FlowAction {
+        if (navigation == "tap") {
+            if (needsConfirmation(o)) {
+                if (++confirmationAttempts > 3) return FlowAction.Pause("自定义提交仍未生效，请检查点击位置")
+                customConfirmSent = true
+                return FlowAction.CustomTap(customClicks.confirm, "自定义提交本题")
+            }
+            return guarded("custom-next", FlowAction.CustomTap(customClicks.next, "自定义下一题"))
+        }
         if (navigation == "confirm") {
             if (o.confirm != null && !questionConfirmed) {
                 confirmationAttempts += 1

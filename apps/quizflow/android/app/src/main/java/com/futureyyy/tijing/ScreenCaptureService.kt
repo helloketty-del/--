@@ -261,7 +261,7 @@ class ScreenCaptureService : Service() {
     fun isCaptureReady(): Boolean = projection != null && virtualDisplay != null
 
     fun isSessionRunning(): Boolean =
-        !terminalStopScheduled && runtimeConfig != null && (coordinator != null || sweep != null)
+        !terminalStopScheduled && runtimeConfig != null && (coordinator != null || sweep != null || runtimeConfig?.gestureTestOnly == true || runtimeConfig?.mode == QuizMode.CAPTURE)
 
     private fun cancelFreshFrame(reason: String = "截图请求已取消") {
         if (!::captureHandler.isInitialized) return
@@ -401,20 +401,28 @@ class ScreenCaptureService : Service() {
         val generation = ++runnerGeneration
         val overlay = OverlayController(this, object : OverlayController.Callbacks {
             override fun onPrimaryAction() {
-                if (runtimeConfig?.mode == QuizMode.CAPTURE) {
+                if (runtimeConfig?.gestureTestOnly == true) {
+                    testPageNavigation(generation)
+                } else if (runtimeConfig?.mode == QuizMode.CAPTURE) {
                     startSweep(generation)
                 } else {
                     withRunner(generation) { runner -> runner.onPrimaryAction() }
                 }
             }
 
-            override fun onRetry() = withRunner(generation) { runner -> runner.retry() }
+            override fun onRetry() {
+                if (runtimeConfig?.mode == QuizMode.CAPTURE) startSweep(generation)
+                else withRunner(generation) { it.retry() }
+            }
 
             override fun onPause() {
                 if (runtimeConfig?.mode == QuizMode.CAPTURE) stopSweep() else withRunner(generation) { runner -> runner.pause() }
             }
 
-            override fun onResume() = withRunner(generation) { runner -> runner.resume() }
+            override fun onResume() {
+                if (runtimeConfig?.mode == QuizMode.CAPTURE) startSweep(generation)
+                else withRunner(generation) { it.resume() }
+            }
 
             override fun onStop() {
                 if (runtimeConfig?.mode == QuizMode.CAPTURE) {
@@ -427,12 +435,18 @@ class ScreenCaptureService : Service() {
             }
         })
         overlayController = overlay
-        if (config.mode == QuizMode.CAPTURE) overlay.setCaptureMode(true)
+        if (!config.gestureTestOnly && config.mode == QuizMode.CAPTURE) overlay.setCaptureMode(true)
         if (!overlay.show()) {
             overlayController = null
             overlay.destroy()
             runtimeConfig = null
             terminateCaptureSession("悬浮窗创建失败，请检查练题流的悬浮窗权限")
+            return
+        }
+
+        if (config.gestureTestOnly) {
+            overlay.setGestureTestMode()
+            notifySessionState(true)
             return
         }
 
@@ -751,6 +765,12 @@ class ScreenCaptureService : Service() {
                             if (pkg == null) done(false) else service.tapNormalizedAsync(box.centerX / 100f, box.centerY / 100f, pkg, done)
                         }
                     }
+                    override fun tapPoint(point: TapPoint, callback: (Boolean) -> Unit) {
+                        dispatchGestureAfterAnswer(generation, callback) { service, done ->
+                            val pkg = target
+                            if (pkg == null) done(false) else service.tapPointAsync(point, pkg, done)
+                        }
+                    }
                     override fun confirm(box: NormalizedBox?, attempt: Int, callback: (Boolean) -> Unit) {
                         dispatchGestureAfterAnswer(generation, callback, CONFIRM_SETTLE_DELAY_MS) { service, done ->
                             val pkg = target
@@ -794,14 +814,19 @@ class ScreenCaptureService : Service() {
             mainHandler.postDelayed(task, delayMs)
             RunnerScheduledTask { mainHandler.removeCallbacks(task) }
         }
+        val targetPackage = QuizAccessibilityService.instance?.foregroundApplicationPackage()
         val newSweep = CaptureSweep(
             captureGateway = capture,
             modelGateway = model,
-            tapNext = { callback -> tapNextMarker(generation, callback) },
+            tapNext = { callback -> executePageNavigation(generation, config, targetPackage,
+                { sweep?.isRunning == true }, callback) },
             scheduler = sweepScheduler,
             startingQuestionNo = config.startingQuestionNo,
-            settleDelayMs = SWEEP_SETTLE_DELAY_MS,
+            settleDelayMs = config.settleMs.toLong(),
             listener = object : CaptureSweepListener {
+                override fun onNavigationError(message: String) {
+                    mainHandler.post { if (generation == runnerGeneration) overlayController?.showError(message) }
+                }
                 override fun onProgress(questionNo: Int, recognized: Int, pending: Int) {
                     mainHandler.post {
                         if (!destroyed && generation == runnerGeneration) {
@@ -829,29 +854,32 @@ class ScreenCaptureService : Service() {
         sweep?.stop()
     }
 
-    private fun tapNextMarker(generation: Long, callback: (Boolean) -> Unit) {
-        val overlay = overlayController
-        val coords = overlay?.markerNormalized()
-        if (overlay == null || coords == null) {
-            callback(false)
-            return
+    private var navigationTestRunning = false
+
+    private fun testPageNavigation(generation: Long) {
+        if (navigationTestRunning) return
+        val config = runtimeConfig ?: return
+        navigationTestRunning = true
+        val target = QuizAccessibilityService.instance?.foregroundApplicationPackage()
+        executePageNavigation(generation, config, target, { runtimeConfig?.gestureTestOnly == true }) { success ->
+            navigationTestRunning = false
+            if (!destroyed && generation == runnerGeneration) overlayController?.showGestureTestStatus(
+                if (success) "动作已发送，请观察页面是否变化。可再次测试或停止。"
+                else "动作未发出：请打开目标题目页，检查无障碍权限后重试。")
         }
-        overlay.tapMarker {
-            mainHandler.post {
-                // The user may stop during the marker-hide delay; never tap after that.
-                if (destroyed || generation != runnerGeneration || sweep?.isRunning != true) {
-                    callback(false)
-                    return@post
-                }
-                val service = QuizAccessibilityService.instance
-                val targetPackage = service?.foregroundApplicationPackage()
-                if (service == null || targetPackage.isNullOrBlank()) {
-                    callback(false)
-                    return@post
-                }
-                service.tapNormalizedAsync(coords.first, coords.second, targetPackage) { success ->
-                    mainHandler.post { callback(success) }
-                }
+    }
+
+    private fun executePageNavigation(
+        generation: Long, config: QuizRuntimeConfig, target: String?, allowed: () -> Boolean,
+        callback: (Boolean) -> Unit,
+    ) {
+        val command = NavigationCommand.from(config)
+        dispatchGestureAfterAnswer(generation, callback) { service, done ->
+            if (!allowed() || target.isNullOrBlank() || !service.isTargetForeground(target)) done(false)
+            else when (command) {
+                is NavigationCommand.Click -> service.tapPointAsync(command.point, target, done)
+                is NavigationCommand.Swipe -> service.swipePathAsync(command.path, target, done)
+                NavigationCommand.Confirm -> service.tapConfirmationAsync(null, 1, target, done)
             }
         }
     }
@@ -952,6 +980,11 @@ class ScreenCaptureService : Service() {
 
     private fun teardownRunner() {
         val wasRunning = coordinator != null || sweep != null || runtimeConfig != null
+        if (runtimeConfig?.gestureTestOnly == true) {
+            gestureDispatchGeneration += 1
+            QuizAccessibilityService.instance?.cancelGestures()
+        }
+        navigationTestRunning = false
         runnerGeneration += 1
         val currentCoordinator = coordinator
         coordinator = null

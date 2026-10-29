@@ -164,6 +164,14 @@ class QuizAccessibilityService : AccessibilityService() {
         return enqueuePath(path, 70, targetPackage, completion)
     }
 
+    fun tapPointAsync(point: TapPoint, targetPackage: String, completion: (Boolean) -> Unit): Boolean {
+        val finish = singleCompletion(completion)
+        if (!isEligibleTargetPackage(targetPackage) || !isTargetForeground(targetPackage)) return reject(finish)
+        val m = fullDisplayMetrics()
+        val path = Path().apply { moveTo(point.x / 100f * (m.widthPixels - 1), point.y / 100f * (m.heightPixels - 1)) }
+        return enqueuePath(path, point.durationMs, targetPackage, finish)
+    }
+
     fun swipeAsync(direction: FlowSwipe, targetPackage: String, completion: (Boolean) -> Unit): Boolean {
         return swipePathAsync(SwipePath.defaultFor(direction), targetPackage, completion)
     }

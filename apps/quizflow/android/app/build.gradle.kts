@@ -35,8 +35,8 @@ android {
         applicationId = "com.quizflow.practice"
         minSdk = 26
         targetSdk = 35
-        versionCode = 39
-        versionName = "0.8.2-practice"
+        versionCode = 40
+        versionName = "0.8.3-practice"
     }
 
     signingConfigs {

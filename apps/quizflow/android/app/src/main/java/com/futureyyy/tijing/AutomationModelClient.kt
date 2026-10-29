@@ -33,13 +33,13 @@ class AutomationModelClient(
                 .put("images", JSONArray(frames.map { it.dataUrl }))
                 .put("maxTokens", 5000)
                 .put("prompt", CONTRACT + "\n当前最后一张截图尺寸：${frames.last().imageWidth}×${frames.last().imageHeight} 像素；输出坐标仍必须是百分比。" +
-                    "\n坐标修正反馈：" + feedback + "\n运行状态：" + context + "\n用户补充要求：" + config.automationInstructions +
+                    "\n翻页设置：" + (if (config.navigation != "confirm") "用户预设点击或滑动，confirm_box 和 next_box 返回 null。" else "识别本题确认与下一题按钮。") + "\n坐标修正反馈：" + feedback + "\n运行状态：" + context + "\n用户补充要求：" + config.automationInstructions +
                     if (solve) "\n请解题，将正确选项的完整文字放入 answer_texts。" else
                         "\n只识别，不解题，answer_texts 返回空数组，答案由用户本地题库提供。")
                 .toString()
             request = ModelClient.requestAsync(payload) { response ->
                 if (token != generation) return@requestAsync
-                val parsed = response.mapCatching { FlowObservation.parse(it, frames.last().imageWidth, frames.last().imageHeight) }
+                val parsed = response.mapCatching { FlowObservation.parse(it, frames.last().imageWidth, frames.last().imageHeight, config.navigation != "confirm") }
                 val coordinateError = parsed.exceptionOrNull()
                 if (coordinateError is CoordinateResponseException && repair < 2) {
                     send(solve, fallback, repair + 1, coordinateError.message.orEmpty() +

@@ -5,7 +5,7 @@ export const SWIPE_DEFAULTS = Object.freeze({
 });
 
 export function swipeDirection(value) {
-  return ['confirm', 'up', 'left', 'right'].includes(value) ? value : (value === 'down' ? 'up' : 'confirm');
+  return ['confirm', 'tap', 'up', 'left', 'right'].includes(value) ? value : (value === 'down' ? 'up' : 'confirm');
 }
 
 export function sanitizeSwipeProfiles(raw = {}) {
@@ -30,4 +30,20 @@ export function swipeProfileError(settings) {
       || (direction === 'right' && p.endX <= p.startX)) return `${label}：起点和终点与滑动方向不一致，请调整范围。`;
   }
   return '';
+}
+
+export const TAP_DEFAULTS = Object.freeze({
+  next: Object.freeze({ x: 87.5, y: 94, durationMs: 100 }),
+  confirm: Object.freeze({ x: 50, y: 94, durationMs: 100 }),
+  confirmFirst: false,
+});
+
+export function sanitizeCustomClicks(raw = {}) {
+  const point = (name) => {
+    const value = raw?.[name] || {}, fallback = TAP_DEFAULTS[name];
+    const number = (key, min, max) => value[key] !== null && value[key] !== '' && Number.isFinite(Number(value[key]))
+      ? Math.max(min, Math.min(max, Number(value[key]))) : fallback[key];
+    return { x: number('x', 0, 100), y: number('y', 0, 100), durationMs: Math.round(number('durationMs', 50, 500)) };
+  };
+  return { next: point('next'), confirm: point('confirm'), confirmFirst: raw?.confirmFirst === true };
 }

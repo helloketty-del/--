@@ -238,7 +238,7 @@ test('floating session waits for capture readiness before reporting running', ()
   );
   assert.match(
     screenCaptureService,
-    /!terminalStopScheduled && runtimeConfig != null && \(coordinator != null \|\| sweep != null\)/,
+    /!terminalStopScheduled && runtimeConfig != null && \(coordinator != null \|\| sweep != null \|\| runtimeConfig\?\.gestureTestOnly == true \|\| runtimeConfig\?\.mode == QuizMode\.CAPTURE\)/,
   );
   assert.match(screenCaptureService, /mainHandler\.removeCallbacks\(terminalStopRunnable\)/);
   assert.match(
