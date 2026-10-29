@@ -1,0 +1,16 @@
+.field-block select {
+  width: 100%;
+  min-height: 37px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  outline: 0;
+  color: var(--ink);
+  background: #fffdf7;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.field-block select:focus {
+  border-color: #9ebf72;
+  box-shadow: 0 0 0 3px rgba(158, 191, 114, 0.14);
+}

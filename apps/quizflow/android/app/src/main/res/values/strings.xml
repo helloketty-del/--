@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">练题流</string>
+    <string name="accessibility_service_label">练题流自动点击服务</string>
+    <string name="accessibility_service_description">用于在微信题目页执行答案选项和下一题点击。</string>
+    <string name="foreground_service_channel">练题流悬浮识题</string>
+    <string name="foreground_service_title">练题流正在运行</string>
+    <string name="foreground_service_text">屏幕识别与悬浮按钮已准备</string>
+    <string name="foreground_service_stop">停止</string>
+</resources>

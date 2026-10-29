@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 240" role="img" aria-labelledby="title desc">
+  <title id="title">Quiz control room preview texture</title>
+  <desc id="desc">A restrained grid and signal-line texture used behind the mock quiz device.</desc>
+  <rect width="480" height="240" fill="#dfdbd1"/>
+  <g stroke="#14221f" stroke-opacity=".08" stroke-width="1">
+    <path d="M0 24h480M0 48h480M0 72h480M0 96h480M0 120h480M0 144h480M0 168h480M0 192h480M0 216h480"/>
+    <path d="M24 0v240M48 0v240M72 0v240M96 0v240M120 0v240M144 0v240M168 0v240M192 0v240M216 0v240M240 0v240M264 0v240M288 0v240M312 0v240M336 0v240M360 0v240M384 0v240M408 0v240M432 0v240M456 0v240"/>
+  </g>
+  <path d="M18 186 C78 143 110 198 166 156 S262 131 305 166 S397 199 462 130" fill="none" stroke="#91c84b" stroke-width="2" stroke-opacity=".42"/>
+  <circle cx="305" cy="166" r="4" fill="#f28b5d" fill-opacity=".7"/>
+</svg>

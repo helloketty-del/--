@@ -1,0 +1,9 @@
+# 复制为 android/local.properties 后按需修改（该文件不会被提交）
+
+sdk.dir=/path/to/Android/Sdk
+
+# 可选：release 签名（若需自行出包）。切勿把真实 keystore 提交进仓库。
+# RELEASE_STORE_FILE=/absolute/path/to/release.jks
+# RELEASE_STORE_PASSWORD=
+# RELEASE_KEY_ALIAS=
+# RELEASE_KEY_PASSWORD=

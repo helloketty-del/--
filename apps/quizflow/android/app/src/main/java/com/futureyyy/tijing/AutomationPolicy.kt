@@ -1,0 +1,237 @@
+package com.futureyyy.tijing
+
+import com.google.gson.JsonParser
+
+enum class FlowPage { QUESTION, ANSWER_SHEET, SUBMIT_DIALOG, RESULT, LOADING, UNKNOWN }
+enum class FlowSwipe { LEFT, RIGHT, UP, DOWN }
+
+data class FlowOption(val text: String, val box: NormalizedBox?, val selected: Boolean?)
+data class FlowObservation(
+    val page: FlowPage,
+    val confidence: Double,
+    val key: String = "",
+    val question: String = "",
+    val complete: Boolean = false,
+    val options: List<FlowOption> = emptyList(),
+    val answers: List<String> = emptyList(),
+    val scroll: FlowSwipe? = null,
+    val confirm: NormalizedBox? = null,
+    val next: NormalizedBox? = null,
+    val submit: NormalizedBox? = null,
+    val submitConfirm: NormalizedBox? = null,
+    val last: Boolean = false,
+    val unanswered: Int? = null,
+    val submissionSucceeded: Boolean = false,
+    val number: Int? = null,
+    val total: Int? = null,
+) {
+    companion object {
+        fun parse(raw: String): FlowObservation {
+            val text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+            val json = JsonParser.parseString(text).asJsonObject
+            fun str(name: String) = json.get(name)?.takeUnless { it.isJsonNull }?.asString ?: ""
+            fun bool(name: String) = json.get(name)?.takeUnless { it.isJsonNull }?.asBoolean ?: false
+            fun integer(name: String): Int? {
+                val value = json.get(name)?.takeUnless { it.isJsonNull } ?: return null
+                require(value.isJsonPrimitive && value.asJsonPrimitive.isNumber) { "$name 必须是整数" }
+                return try { value.asBigDecimal.intValueExact() }
+                catch (e: ArithmeticException) { throw IllegalArgumentException("$name 必须是整数", e) }
+            }
+            fun box(name: String): NormalizedBox? {
+                val a = json.get(name)?.takeUnless { it.isJsonNull }?.asJsonArray ?: return null
+                require(a.size() == 4) { "$name 坐标格式错误" }
+                return NormalizedBox(a[0].asFloat, a[1].asFloat, a[2].asFloat, a[3].asFloat)
+            }
+            val options = json.getAsJsonArray("options")?.map { item ->
+                val o = item.asJsonObject
+                val a = o.get("box")?.takeUnless { it.isJsonNull }?.asJsonArray
+                require(a == null || a.size() == 4) { "选项坐标格式错误" }
+                FlowOption(o.get("text").asString,
+                    a?.let { NormalizedBox(it[0].asFloat, it[1].asFloat, it[2].asFloat, it[3].asFloat) },
+                    o.get("selected")?.takeUnless { it.isJsonNull }?.asBoolean)
+            }.orEmpty()
+            val confidence = json.get("confidence").asDouble
+            require(confidence.isFinite() && confidence in 0.0..1.0) { "识别置信度无效" }
+            val unanswered = integer("unanswered_count")
+            require(unanswered == null || unanswered >= 0) { "未答题数无效" }
+            val number = integer("visible_question_number")
+            val total = integer("total_questions")
+            require(number == null || number in 1..9999) { "可见题号无效" }
+            require(total == null || total in 1..9999) { "总题数无效" }
+            require(number == null || total == null || number <= total) { "可见题号超过总数" }
+            return FlowObservation(
+                FlowPage.valueOf(str("page_kind").uppercase()), confidence,
+                str("question_key"), str("question"), bool("question_complete"), options,
+                json.getAsJsonArray("answer_texts")?.map { it.asString }.orEmpty(),
+                str("scroll_direction").takeIf { it.isNotEmpty() && it != "none" }?.let { FlowSwipe.valueOf(it.uppercase()) },
+                box("confirm_box"), box("next_box"), box("submit_box"), box("submit_confirm_box"),
+                bool("is_last_question"), unanswered, bool("submission_succeeded"), number, total,
+            )
+        }
+    }
+}
+
+sealed class FlowAction {
+    data class Tap(val box: NormalizedBox, val purpose: String) : FlowAction()
+    data class Swipe(val direction: FlowSwipe, val navigation: Boolean = false) : FlowAction()
+    data class Pause(val reason: String) : FlowAction()
+    data object Wait : FlowAction()
+    data object Done : FlowAction()
+}
+
+/** Decisions never use coordinates from previous screenshots. Each tap is re-observed. */
+class AutomationPolicy(
+    private val navigation: String = "auto",
+    private val autoSubmit: Boolean = false,
+    private val minConfidence: Double = 0.85,
+    private val maxScrolls: Int = 12,
+) {
+    private var questionKey = ""
+    private var awaitingNext = false
+    private var confirmed = false
+    private var singleTapMayAdvance = false
+    private var stableAnswers: Set<String>? = null
+    private var scrolls = 0
+    private var sameActions = 0
+    private var lastAction = ""
+    private var submitted = false
+    private var submitConfirmed = false
+    private var completedQuestions = 0
+    private var visibleNumber: Int? = null
+    private var expectedTotal: Int? = null
+    private val completedNumbers = mutableSetOf<Int>()
+    private val verified = mutableSetOf<String>()
+    private val normalized: (String) -> String = { java.text.Normalizer.normalize(it, java.text.Normalizer.Form.NFKC).filter(Char::isLetterOrDigit).lowercase() }
+
+    fun resetRetryBudget() { sameActions = 0; lastAction = ""; scrolls = 0 }
+
+    fun context(): String = "当前已跟踪题目标识=$questionKey；已核实选中选项=${verified.joinToString("、")}；等待翻题=$awaitingNext。只对相同题目标识使用这些信息。"
+
+    fun decide(o: FlowObservation): FlowAction {
+        if (o.confidence < minConfidence) return FlowAction.Pause("识别不确定，请人工核对后重试")
+        if (o.total != null) {
+            if (expectedTotal != null && expectedTotal != o.total) return FlowAction.Pause("总题数识别前后不一致")
+            expectedTotal = o.total
+        }
+        if (o.page == FlowPage.RESULT) {
+            return if ((submitted || submitConfirmed) && o.submissionSucceeded) FlowAction.Done
+            else FlowAction.Pause("已到结果页；尚未核实本次提交成功")
+        }
+        if (o.page == FlowPage.SUBMIT_DIALOG) {
+            if (!autoSubmit) return FlowAction.Pause("已到提交确认窗口，自动提交未开启")
+            if (!submitted || completedQuestions == 0) return FlowAction.Pause("未经过本次交卷流程，请人工核对")
+            if (!allAnswered(o)) return FlowAction.Pause("交卷窗口未确认全部作答，暂停提交")
+            if (submitConfirmed) return FlowAction.Pause("已点击最终确认，尚未出现提交成功页")
+            val box = o.submitConfirm ?: return FlowAction.Pause("无法定位最终提交确认按钮")
+            submitConfirmed = true
+            return guarded("submit-confirm", FlowAction.Tap(box, "确认提交"))
+        }
+        if (o.page == FlowPage.ANSWER_SHEET) {
+            if (!awaitingNext || completedQuestions == 0) return FlowAction.Pause("到达答题卡，请核对题目是否全部完成")
+            return submit(o)
+        }
+        if (o.page == FlowPage.LOADING) return guarded("loading", FlowAction.Wait)
+        if (o.page != FlowPage.QUESTION) return FlowAction.Pause("无法确认当前页面类型")
+        if (o.key.isBlank()) return FlowAction.Pause("缺少稳定题目标识，无法确认是否翻题")
+        if (questionKey.isEmpty()) questionKey = o.key
+        if (o.key != questionKey) {
+            if (!awaitingNext && !singleTapMayAdvance) return FlowAction.Pause("题目意外切换，已暂停以避免漏题")
+            if (!awaitingNext) {
+                completedQuestions += 1
+                visibleNumber?.let(completedNumbers::add)
+            }
+            questionKey = o.key
+            awaitingNext = false
+            confirmed = false
+            singleTapMayAdvance = false
+            stableAnswers = null
+            visibleNumber = null
+            verified.clear()
+            scrolls = 0
+            sameActions = 0
+            lastAction = ""
+        } else if (awaitingNext) {
+            // Never toggle answers while waiting for navigation to finish.
+            if (o.last && (o.confirm == null || confirmed)) return submit(o)
+            return navigate(o)
+        }
+        if (o.number != null) visibleNumber = o.number
+        if (!o.complete) {
+            return scroll(o.scroll ?: FlowSwipe.UP)
+        }
+        val targets = o.answers.map(normalized).toSet()
+        if (targets.isEmpty() || targets.any(String::isBlank)) return FlowAction.Pause("没有得到可靠答案")
+        if (stableAnswers != null && stableAnswers != targets) return FlowAction.Pause("同题答案发生变化，请人工核对")
+        stableAnswers = targets
+        val options = o.options.associateBy { normalized(it.text) }
+        if (options.size != o.options.size) return FlowAction.Pause("选项文字重复，无法唯一定位")
+        if (!options.keys.containsAll(targets)) return FlowAction.Pause("答案未匹配到当前题目选项")
+        o.options.forEach { option ->
+            val text = normalized(option.text)
+            if (option.selected == true) verified.add(text)
+            if (option.selected == false && option.box != null) verified.remove(text)
+        }
+        // A visibly selected wrong option must be removed before continuing.
+        o.options.firstOrNull { it.selected == true && normalized(it.text) !in targets }?.let {
+            return guarded("unselect:${normalized(it.text)}", FlowAction.Tap(it.box
+                ?: return FlowAction.Pause("错误选项不在当前屏幕"), "取消错误选项"))
+        }
+        val missing = targets - verified
+        if (missing.isNotEmpty()) {
+            val candidate = missing.mapNotNull(options::get).firstOrNull { it.box != null }
+            if (candidate != null) {
+                if (candidate.selected == null) return FlowAction.Pause("无法辨认选项是否选中，避免重复点击")
+                singleTapMayAdvance = targets.size == 1
+                return guarded("answer:${normalized(candidate.text)}", FlowAction.Tap(candidate.box!!, "选择答案"))
+            }
+            return scroll(o.scroll ?: FlowSwipe.DOWN)
+        }
+        completedQuestions += 1
+        visibleNumber?.let(completedNumbers::add)
+        awaitingNext = true
+        if (o.last && o.confirm == null) return submit(o)
+        return navigate(o)
+    }
+
+    private fun navigate(o: FlowObservation): FlowAction {
+        if (!confirmed) o.confirm?.let {
+            confirmed = true
+            return guarded("confirm", FlowAction.Tap(it, "确认本题"))
+        }
+        o.next?.let { return guarded("next", FlowAction.Tap(it, "下一题")) }
+        val direction = when (navigation) {
+            "left" -> FlowSwipe.LEFT
+            "right" -> FlowSwipe.RIGHT
+            "up" -> FlowSwipe.UP
+            "down" -> FlowSwipe.DOWN
+            else -> return guarded("wait-next", FlowAction.Wait)
+        }
+        return guarded("navigate:$direction", FlowAction.Swipe(direction, true))
+    }
+
+    private fun submit(o: FlowObservation): FlowAction {
+        if (!autoSubmit) return FlowAction.Pause("已完成当前题，自动提交未开启")
+        if (!allAnswered(o)) return FlowAction.Pause("未确认全部作答，暂停交卷")
+        if (submitted) return guarded("wait-submit", FlowAction.Wait)
+        val box = o.submit ?: return FlowAction.Pause("无法定位交卷按钮")
+        submitted = true
+        return guarded("submit", FlowAction.Tap(box, "提交全部答案"))
+    }
+
+    private fun allAnswered(o: FlowObservation): Boolean {
+        if (o.unanswered != null) return o.unanswered == 0
+        val total = expectedTotal ?: return false
+        return (1..total).all(completedNumbers::contains)
+    }
+
+    private fun scroll(direction: FlowSwipe): FlowAction {
+        if (++scrolls > maxScrolls) return FlowAction.Pause("本题滚动次数达到上限，请检查长题页面")
+        return guarded("scroll:$direction", FlowAction.Swipe(direction))
+    }
+
+    private fun guarded(key: String, action: FlowAction): FlowAction {
+        sameActions = if (lastAction == key) sameActions + 1 else 1
+        lastAction = key
+        return if (sameActions > 3) FlowAction.Pause("页面没有响应或动作未生效，请核对后重试") else action
+    }
+}

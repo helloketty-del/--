@@ -1,0 +1,48 @@
+# ---- 依赖 / 构建产物 ----
+node_modules/
+dist/
+build/
+.gradle/
+android/.gradle/
+android/build/
+android/app/build/
+android/simulator/build/
+**/.cxx/
+**/__pycache__/
+*.pyc
+*.apk
+*.aab
+*.apk.sha256
+
+# 前端打包产物（由 npm run build + scripts/sync-android-assets.mjs 生成）
+android/app/src/main/assets/web/
+
+# ---- 本地工具链（体积巨大，请自备）----
+.tooling/
+work/
+
+# ---- 私密配置（务必不要提交）----
+.env
+.env.*
+!.env.example
+local.properties
+android/local.properties
+*.keystore
+*.jks
+*.p12
+*.pem
+
+# ---- 公司题库与派生产物：不随开源发布 ----
+outputs/
+question-bank-backup-*.json
+
+# ---- 杂项 ----
+*.log
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
+NUL
+
+# Explicit downloadable trial build
+!releases/QuizFlow-0.8.0.apk

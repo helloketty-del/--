@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="sim_background">#F7F7F5</color>
+    <color name="sim_ink">#25302D</color>
+    <color name="sim_muted">#75807A</color>
+    <color name="sim_orange">#FB5B30</color>
+    <color name="sim_orange_dark">#E84A25</color>
+</resources>

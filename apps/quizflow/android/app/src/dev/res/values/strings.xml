@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">题镜 Dev</string>
+    <string name="accessibility_service_label">题镜 Dev 自动点击服务</string>
+    <string name="foreground_service_channel">题镜 Dev 悬浮识题</string>
+    <string name="foreground_service_title">题镜 Dev 正在运行</string>
+</resources>

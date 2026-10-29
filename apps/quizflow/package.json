@@ -1,0 +1,24 @@
+{
+  "name": "quiz-control-room",
+  "version": "0.8.0-practice",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test tests/*.mjs",
+    "test:watch": "node --test --watch tests/*.mjs"
+  },
+  "dependencies": {
+    "dotenv": "16.4.7",
+    "lucide-react": "0.468.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "vite": "5.4.21"
+  },
+  "devDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "4.60.2",
+    "rollup": "4.60.2"
+  }
+}
