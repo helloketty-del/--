@@ -3,6 +3,8 @@ package com.futureyyy.tijing
 data class CaptureFrame(
     val dataUrl: String,
     val signature: FrameSignature,
+    val imageWidth: Int? = null,
+    val imageHeight: Int? = null,
 )
 
 class FrameSignature private constructor(

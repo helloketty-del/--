@@ -788,7 +788,7 @@ function App() {
           <div className="bridge-card-head"><span className="status-dot status-dot-live" /> ANDROID BRIDGE</div>
           <p>安卓端支持屏幕捕获、模型识别、自动点击与滑动。</p>
           <div className="bridge-progress"><span style={{ width: '100%' }} /></div>
-          <div className="bridge-meta"><span>ANDROID BUILD</span><strong>0.8.1</strong></div>
+          <div className="bridge-meta"><span>ANDROID BUILD</span><strong>0.8.2</strong></div>
         </div>
         <div className="sidebar-footer"><ShieldCheck size={14} /> 本地配置优先 · Key 脱敏</div>
       </aside>

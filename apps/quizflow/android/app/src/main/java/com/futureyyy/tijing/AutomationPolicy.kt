@@ -2,7 +2,7 @@ package com.futureyyy.tijing
 
 import com.google.gson.JsonParser
 
-enum class FlowPage { QUESTION, ANSWER_SHEET, SUBMIT_DIALOG, RESULT, LOADING, UNKNOWN }
+enum class FlowPage { QUESTION, ANSWER_SHEET, SUBMIT_DIALOG, RESULT, LOADING, POPUP, UNKNOWN }
 enum class FlowSwipe { LEFT, RIGHT, UP, DOWN }
 
 data class FlowOption(val text: String, val box: NormalizedBox?, val selected: Boolean?)
@@ -24,9 +24,10 @@ data class FlowObservation(
     val submissionSucceeded: Boolean = false,
     val number: Int? = null,
     val total: Int? = null,
+    val popup: PopupObservation? = null,
 ) {
     companion object {
-        fun parse(raw: String): FlowObservation {
+        fun parse(raw: String, imageWidth: Int? = null, imageHeight: Int? = null): FlowObservation {
             val text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
             val json = JsonParser.parseString(text).asJsonObject
             fun str(name: String) = json.get(name)?.takeUnless { it.isJsonNull }?.asString ?: ""
@@ -37,17 +38,12 @@ data class FlowObservation(
                 return try { value.asBigDecimal.intValueExact() }
                 catch (e: ArithmeticException) { throw IllegalArgumentException("$name 必须是整数", e) }
             }
-            fun box(name: String): NormalizedBox? {
-                val a = json.get(name)?.takeUnless { it.isJsonNull }?.asJsonArray ?: return null
-                require(a.size() == 4) { "$name 坐标格式错误" }
-                return NormalizedBox(a[0].asFloat, a[1].asFloat, a[2].asFloat, a[3].asFloat)
-            }
-            val options = json.getAsJsonArray("options")?.map { item ->
+            val coordinates = ModelCoordinates.fromResponse(json, imageWidth, imageHeight)
+            fun box(name: String) = coordinates.box(json.get(name), name)
+            val options = json.getAsJsonArray("options")?.mapIndexed { index, item ->
                 val o = item.asJsonObject
-                val a = o.get("box")?.takeUnless { it.isJsonNull }?.asJsonArray
-                require(a == null || a.size() == 4) { "选项坐标格式错误" }
                 FlowOption(o.get("text").asString,
-                    a?.let { NormalizedBox(it[0].asFloat, it[1].asFloat, it[2].asFloat, it[3].asFloat) },
+                    coordinates.box(o.get("box"), "options[$index].box"),
                     o.get("selected")?.takeUnless { it.isJsonNull }?.asBoolean)
             }.orEmpty()
             val confidence = json.get("confidence").asDouble
@@ -66,6 +62,8 @@ data class FlowObservation(
                 str("scroll_direction").takeIf { it.isNotEmpty() && it != "none" }?.let { FlowSwipe.valueOf(it.uppercase()) },
                 box("confirm_box"), box("next_box"), box("submit_box"), box("submit_confirm_box"),
                 bool("is_last_question"), unanswered, bool("submission_succeeded"), number, total,
+                if (str("page_kind").equals("popup", true)) PopupObservation(str("popup_kind"), str("popup_title"),
+                    str("popup_message"), str("popup_button_text"), box("popup_button_box")) else null,
             )
         }
     }
@@ -90,6 +88,8 @@ class AutomationPolicy(
     private var questionKey = ""
     private var awaitingNext = false
     private var confirmationAttempts = 0
+    private var questionConfirmed = false
+    private var popupAttempts = 0
     private var singleTapMayAdvance = false
     private var stableAnswers: Set<String>? = null
     private var scrolls = 0
@@ -104,12 +104,19 @@ class AutomationPolicy(
     private val verified = mutableSetOf<String>()
     private val normalized: (String) -> String = { java.text.Normalizer.normalize(it, java.text.Normalizer.Form.NFKC).filter(Char::isLetterOrDigit).lowercase() }
 
-    fun resetRetryBudget() { sameActions = 0; lastAction = ""; scrolls = 0 }
+    fun resetRetryBudget() { sameActions = 0; lastAction = ""; scrolls = 0; popupAttempts = 0 }
 
     fun context(): String = "当前已跟踪题目标识=$questionKey；已核实选中选项=${verified.joinToString("、")}；等待翻题=$awaitingNext。只对相同题目标识使用这些信息。"
 
     fun decide(o: FlowObservation): FlowAction {
         if (o.confidence < minConfidence) return FlowAction.Pause("识别不确定，请人工核对后重试")
+        if (o.page == FlowPage.POPUP) {
+            if (++popupAttempts > 3) return FlowAction.Pause("弹窗连续出现，已暂停以避免重复操作")
+            val action = PopupHandling.decide(o.popup, confirmationAttempts > 0 || awaitingNext || singleTapMayAdvance)
+            if (action is FlowAction.Tap && PopupHandling.confirmsAnswer(o.popup)) questionConfirmed = true
+            return action
+        }
+        popupAttempts = 0
         if (o.total != null) {
             if (expectedTotal != null && expectedTotal != o.total) return FlowAction.Pause("总题数识别前后不一致")
             expectedTotal = o.total
@@ -144,6 +151,7 @@ class AutomationPolicy(
             questionKey = o.key
             awaitingNext = false
             confirmationAttempts = 0
+            questionConfirmed = false
             singleTapMayAdvance = false
             stableAnswers = null
             visibleNumber = null
@@ -153,7 +161,7 @@ class AutomationPolicy(
             lastAction = ""
         } else if (awaitingNext) {
             // Never toggle answers while waiting for navigation to finish.
-            if (o.last && (navigation != "confirm" || o.confirm == null)) return submit(o)
+            if (o.last && (navigation != "confirm" || o.confirm == null || questionConfirmed)) return submit(o)
             return navigate(o)
         }
         if (o.number != null) visibleNumber = o.number
@@ -190,13 +198,13 @@ class AutomationPolicy(
         completedQuestions += 1
         visibleNumber?.let(completedNumbers::add)
         awaitingNext = true
-        if (o.last && (navigation != "confirm" || o.confirm == null)) return submit(o)
+        if (o.last && (navigation != "confirm" || o.confirm == null || questionConfirmed)) return submit(o)
         return navigate(o)
     }
 
     private fun navigate(o: FlowObservation): FlowAction {
         if (navigation == "confirm") {
-            if (o.confirm != null) {
+            if (o.confirm != null && !questionConfirmed) {
                 confirmationAttempts += 1
                 return guarded("confirm", FlowAction.Confirm(o.confirm, confirmationAttempts))
             }

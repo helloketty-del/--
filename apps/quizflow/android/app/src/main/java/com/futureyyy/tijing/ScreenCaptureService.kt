@@ -312,7 +312,7 @@ class ScreenCaptureService : Service() {
             val dataUrl = "data:image/jpeg;base64,$encoded"
             latestFrame = dataUrl
             if (requestedByRunner) debugRunnerCapture("frame-encoded")
-            if (requestedByRunner) completePendingCapture(Result.success(CaptureFrame(dataUrl, signature)))
+            if (requestedByRunner) completePendingCapture(Result.success(CaptureFrame(dataUrl, signature, width, height)))
             if (requestedByLegacy) completeLegacyFrame(dataUrl)
         } catch (error: Exception) {
             if (requestedByRunner) debugRunnerCapture("frame-failed=${error.javaClass.simpleName}")
